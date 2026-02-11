@@ -1,0 +1,29 @@
+# ═══════════════════════════════════════════════════════════════════
+# Enterprise NGFW - Base Requirements
+# ═══════════════════════════════════════════════════════════════════
+
+# Core Dependencies
+cryptography>=41.0.0
+PyYAML>=6.0
+aiohttp>=3.8.0
+asyncio>=3.4.3
+
+# Monitoring & Metrics
+prometheus-client>=0.17.0
+
+# Additional Utilities
+python-dateutil>=2.8.2
+psutil>=5.9.0
+
+# eBPF Support (optional - requires BCC installation)
+# python-bcc; platform_system=="Linux"
+
+# Logging
+python-json-logger>=2.0.0
+
+# Configuration validation
+jsonschema>=4.17.0
+
+# CLI
+click>=8.1.0
+rich>=13.0.0

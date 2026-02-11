@@ -1,0 +1,214 @@
+# ═══════════════════════════════════════════════════════════════════
+# Enterprise NGFW - Base Configuration
+# ═══════════════════════════════════════════════════════════════════
+
+# Proxy Configuration
+proxy:
+  # Proxy mode: forward, transparent, reverse, or all
+  mode: "transparent"
+  
+  # Performance settings (shared across all modes)
+  max_connections: 10000
+  buffer_size: 65536
+  connection_timeout: 300
+  
+# SSL/TLS Configuration
+tls:
+  # CA certificates
+  ca_cert_path: "/etc/ngfw/certs/root-ca.crt"
+  ca_key_path: "/etc/ngfw/certs/root-ca.key"
+  
+  # Intermediate CA
+  use_intermediate_ca: true
+  intermediate_ca_cert: "/etc/ngfw/certs/intermediate-ca.crt"
+  intermediate_ca_key: "/etc/ngfw/certs/intermediate-ca.key"
+  
+  # Server certificate (for reverse proxy)
+  server_cert: "/etc/ngfw/certs/server.crt"
+  server_key: "/etc/ngfw/certs/server.key"
+  cert_chain: "/etc/ngfw/certs/chain.pem"
+  
+  # Certificate generation settings
+  cert_cache_dir: "/var/cache/ngfw/certs"
+  cert_cache_size: 10000
+  cert_validity_days: 365
+  cert_key_size: 2048
+  
+  # TLS protocol versions
+  min_tls_version: "TLSv1.2"
+  max_tls_version: "TLSv1.3"
+  
+  # Cipher suites (empty = use defaults)
+  cipher_suites: []
+  
+  # ALPN protocols
+  alpn_protocols:
+    - "h2"
+    - "http/1.1"
+
+# SSL Inspection Policy
+ssl_inspection:
+  # Global enable/disable
+  enabled: true
+  
+  # Bypass domains (no inspection)
+  bypass_domains:
+    - "*.bank.com"
+    - "*.paypal.com"
+    - "*.banking.app"
+  
+  # Bypass IPs
+  bypass_ips: []
+  
+  # Bypass categories
+  bypass_categories:
+    - "banking"
+    - "healthcare"
+  
+  # Certificate pinning detection
+  detect_pinning: true
+  pinning_action: "bypass"  # bypass, block, or monitor
+
+# Routing Configuration
+routing:
+  # Default proxy mode for connections
+  default_mode: "transparent"
+  
+  # Port to mode mapping
+  port_mappings:
+    8080: "forward"
+    8443: "forward"
+    443: "transparent"
+    80: "transparent"
+
+# Flow Tracking
+flow_tracking:
+  enabled: true
+  max_flows: 100000
+  flow_timeout: 3600  # seconds
+
+# eBPF XDP Configuration
+ebpf:
+  enabled: true
+  interface: "eth0"
+  xdp_mode: "native"  # native, generic, or offload
+  feedback_interval: 5  # seconds
+  
+  # Port filtering
+  port_filter:
+    enabled: true
+    default_action: "block"  # allow, block, or inspect
+    
+    # Allowed ports (TCP/UDP)
+    allowed_ports:
+      - 80    # HTTP
+      - 443   # HTTPS
+      - 8080  # HTTP Alt
+      - 8443  # HTTPS Alt
+      - 53    # DNS
+      - 22    # SSH (admin)
+
+# Security Policies
+security:
+  # IP blacklist
+  blacklist_ips: []
+  
+  # IP whitelist (bypass all checks)
+  whitelist_ips: []
+  
+  # Domain blacklist
+  blacklist_domains:
+    - "*.malware.com"
+    - "*.phishing.net"
+  
+  # Rate limiting
+  rate_limiting:
+    enabled: true
+    requests_per_second: 1000
+    burst_size: 5000
+  
+  # Strict certificate validation
+  strict_cert_validation: true
+
+# Logging Configuration
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  file: "/var/log/ngfw/ngfw.log"
+  max_bytes: 104857600  # 100 MB
+  backup_count: 10
+  
+  # Flow logging
+  flow_log_enabled: true
+  flow_log_file: "/var/log/ngfw/flows.log"
+  
+  # Security logging
+  security_log_enabled: true
+  security_log_file: "/var/log/ngfw/security.log"
+
+# Monitoring Configuration
+monitoring:
+  # Prometheus metrics
+  prometheus:
+    enabled: true
+    port: 9090
+    path: "/metrics"
+  
+  # Health check endpoint
+  health_check:
+    enabled: true
+    port: 9091
+    path: "/health"
+
+# API Configuration
+api:
+  enabled: false
+  listen_host: "127.0.0.1"
+  listen_port: 8888
+  
+  # Authentication
+  auth:
+    enabled: true
+    api_key: "change-me-in-production"
+  
+  # WebSocket
+  websocket:
+    enabled: false
+    port: 8889
+
+# Integration Configuration
+integration:
+  # LDAP/Active Directory
+  ldap:
+    enabled: false
+    server: "ldap://ldap.example.com"
+    base_dn: "dc=example,dc=com"
+    bind_dn: "cn=admin,dc=example,dc=com"
+    bind_password: ""
+  
+  # SIEM Integration
+  siem:
+    enabled: false
+    type: "syslog"  # syslog, elk, splunk
+    server: "siem.example.com"
+    port: 514
+  
+  # IDS/IPS Integration
+  ids_ips:
+    enabled: false
+    type: "suricata"  # suricata, snort, zeek
+    socket_path: "/var/run/suricata/suricata.socket"
+
+# Machine Learning
+ml:
+  enabled: false
+  
+  # Anomaly detection
+  anomaly_detection:
+    enabled: false
+    model_path: "/etc/ngfw/ml/anomaly_detector.onnx"
+    threshold: 0.85
+  
+  # Traffic profiling
+  traffic_profiling:
+    enabled: false
+    learning_period: 86400  # seconds (24 hours)

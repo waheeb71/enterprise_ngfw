@@ -1,0 +1,292 @@
+# 🌳 Enterprise NGFW - شجرة تنفيذ النظام الكاملة
+
+## نقطة البداية: [main.py](file:///e:/%D9%85%D8%B4%D8%B1%D9%88%D8%B9/enterprise_ngfw/main.py) → `__main__`
+
+```mermaid
+flowchart TD
+    A["__main__<br/>asyncio.run(main())"] --> B["main()<br/>argparse تحليل الأوامر"]
+    B --> C{"هل --init-ca<br/>أو --export-ca؟"}
+    C -- نعم --> D["تصدير شهادات CA<br/>ثم خروج"]
+    C -- لا --> E["NGFWApplication(config_path)<br/>إنشاء التطبيق"]
+    E --> F["app.start()"]
+    F --> G["1. load_config()<br/>تحميل YAML"]
+    G --> H["2. setup_logging()<br/>إعداد السجلات"]
+    H --> I["3. initialize_components()<br/>تهيئة المكونات"]
+    I --> J["4. _setup_signal_handlers()<br/>معالجة الإشارات"]
+    J --> K["5. _print_banner()<br/>طباعة البانر"]
+    K --> L["6. بدء الخدمات<br/>asyncio.gather()"]
+```
+
+---
+
+## المرحلة 1: تحميل الإعداد ([load_config](file:///e:/%D9%85%D8%B4%D8%B1%D9%88%D8%B9/enterprise_ngfw/main.py#97-123))
+
+```mermaid
+flowchart LR
+    A["load_config()"] --> B["قراءة config.yaml<br/>yaml.safe_load()"]
+    B --> C["_validate_config()"]
+    C --> D{"التحقق من الأقسام<br/>proxy, tls, logging"}
+    D -- موجود --> E["✅ الإعداد صالح"]
+    D -- مفقود --> F["❌ خروج sys.exit(1)"]
+```
+
+---
+
+## المرحلة 2: تهيئة المكونات ([initialize_components](file:///e:/%D9%85%D8%B4%D8%B1%D9%88%D8%B9/enterprise_ngfw/main.py#163-249))
+
+```mermaid
+flowchart TD
+    INIT["initialize_components()"] --> CA["1️⃣ CAPoolManager<br/>إدارة شهادات CA"]
+    CA --> SSL_I["2️⃣ SSLInspector<br/>فحص SSL/TLS"]
+    SSL_I --> SSL_P["3️⃣ SSLPolicyEngine<br/>سياسات SSL"]
+    SSL_P --> ROUTER["4️⃣ TrafficRouter<br/>توجيه الترافيك"]
+    ROUTER --> FLOW["5️⃣ FlowTracker<br/>تتبع الاتصالات"]
+    FLOW --> XDP["6️⃣ XDP Engine (eBPF)<br/>تسريع النواة"]
+    XDP --> ML["7️⃣ ML Components<br/>الذكاء الاصطناعي"]
+    ML --> PROXY["8️⃣ Proxy Modes<br/>أوضاع البروكسي"]
+
+    style CA fill:#2196F3,color:white
+    style SSL_I fill:#2196F3,color:white
+    style SSL_P fill:#2196F3,color:white
+    style ROUTER fill:#4CAF50,color:white
+    style FLOW fill:#4CAF50,color:white
+    style XDP fill:#FF9800,color:white
+    style ML fill:#9C27B0,color:white
+    style PROXY fill:#F44336,color:white
+```
+
+### تفاصيل كل مكون:
+
+| # | المكون | الملف | الوظيفة |
+|---|--------|-------|---------|
+| 1 | `CAPoolManager` | [ca_pool.py](file:///e:/مشروع/enterprise_ngfw/core/ssl_engine/ca_pool.py) | توليد وإدارة شهادات CA للـ MITM |
+| 2 | [SSLInspector](file:///e:/%D9%85%D8%B4%D8%B1%D9%88%D8%B9/enterprise_ngfw/core/ssl_engine/inspector.py#27-198) | [inspector.py](file:///e:/مشروع/enterprise_ngfw/core/ssl_engine/inspector.py) | اعتراض SSL/TLS وتوليد شهادات ديناميكية |
+| 3 | `SSLPolicyEngine` | [policy_engine.py](file:///e:/مشروع/enterprise_ngfw/core/ssl_engine/policy_engine.py) | سياسات فحص SSL (تجاوز/فحص) |
+| 4 | [TrafficRouter](file:///e:/%D9%85%D8%B4%D8%B1%D9%88%D8%B9/enterprise_ngfw/core/router.py#49-239) | [router.py](file:///e:/مشروع/enterprise_ngfw/core/router.py) | توجيه الاتصالات حسب البورت والبروتوكول |
+| 5 | [FlowTracker](file:///e:/%D9%85%D8%B4%D8%B1%D9%88%D8%B9/enterprise_ngfw/core/flow_tracker.py#110-314) | [flow_tracker.py](file:///e:/مشروع/enterprise_ngfw/core/flow_tracker.py) | تتبع حالة الاتصالات (NEW → ESTABLISHED → CLOSED) |
+| 6 | [XDPEngine](file:///e:/%D9%85%D8%B4%D8%B1%D9%88%D8%B9/enterprise_ngfw/acceleration/ebpf/xdp_engine.py#33-418) | [xdp_engine.py](file:///e:/مشروع/enterprise_ngfw/acceleration/ebpf/xdp_engine.py) | تصفية سريعة على مستوى النواة |
+| 7 | ML Components | [ml/inference/](file:///e:/مشروع/enterprise_ngfw/ml/inference) | كشف الأنماط الشاذة + تحليل السلوك |
+| 8 | Proxy Modes | [proxy_modes/](file:///e:/مشروع/enterprise_ngfw/core/proxy_modes) | Forward / Transparent / Reverse |
+
+---
+
+## المرحلة 3: بدء الخدمات (start)
+
+```mermaid
+flowchart TD
+    START["app.start()"] --> |"asyncio.gather()"| P1["🔀 Transparent Proxy<br/>المنافذ 80, 443"]
+    START --> P2["📡 Forward Proxy<br/>المنفذ 8080"]
+    START --> P3["🔒 Reverse Proxy<br/>المنفذ 443"]
+    START --> ML_LOOP["🧠 ML Maintenance Loop<br/>كل 60 ثانية"]
+    START --> API["🔌 API Server<br/>uvicorn على 8000"]
+
+    P1 --> |"asyncio.start_server"| HANDLE1["handle_connection()"]
+    P2 --> |"asyncio.start_server"| HANDLE2["handle_connection()"]
+    P3 --> |"asyncio.start_server"| HANDLE3["handle_connection()"]
+```
+
+---
+
+## المرحلة 4: معالجة الاتصالات - مسار البيانات الكامل
+
+### 🔀 Transparent Proxy (الوضع الشفاف)
+
+```mermaid
+flowchart TD
+    CLIENT["👤 العميل يرسل طلب"] --> LISTEN["MITMProxy يستقبل<br/>handle_connection()"]
+    LISTEN --> DETECT{"الكشف عن البروتوكول<br/>TLS أو HTTP؟"}
+    
+    DETECT -- "TLS (0x16)" --> SNI["استخراج SNI<br/>_parse_sni_from_client_hello()"]
+    DETECT -- "HTTP" --> HTTP["handle_http_connection()<br/>استخراج Host header"]
+    
+    SNI --> POLICY{"_check_security_policy()<br/>هل مسموح؟"}
+    HTTP --> POLICY
+    
+    POLICY -- "❌ محظور" --> BLOCK["إرسال رد حظر<br/>403 Forbidden"]
+    POLICY -- "✅ مسموح" --> MITM["_perform_mitm()<br/>بدء الاعتراض"]
+    
+    MITM --> STEP1["1. إنشاء شهادة للدومين<br/>create_client_ssl_context()"]
+    STEP1 --> STEP2["2. اتصال TLS مع العميل<br/>بالشهادة المولدة"]
+    STEP2 --> STEP3["3. اتصال TLS مع السيرفر الحقيقي<br/>upstream SSL"]
+    STEP3 --> RELAY["4. _relay_data()<br/>نقل البيانات بالاتجاهين"]
+    
+    RELAY --> C2S["Client → Server<br/>تحديث bytes_sent"]
+    RELAY --> S2C["Server → Client<br/>تحديث bytes_received"]
+
+    style CLIENT fill:#2196F3,color:white
+    style BLOCK fill:#F44336,color:white
+    style RELAY fill:#4CAF50,color:white
+```
+
+### 📡 Forward Proxy (البروكسي الصريح)
+
+```mermaid
+flowchart TD
+    CLIENT["👤 العميل يرسل طلب<br/>مع إعداد البروكسي"] --> FP["ForwardProxy<br/>handle_connection()"]
+    FP --> READ["قراءة أول سطر<br/>من الطلب"]
+    READ --> DETECT{"نوع الطلب؟"}
+    
+    DETECT -- "CONNECT host:port" --> CONNECT["_handle_connect()"]
+    DETECT -- "GET/POST http://..." --> HTTP_FP["_handle_http()"]
+    
+    CONNECT --> REPLY["إرسال<br/>200 Connection Established"]
+    REPLY --> TUNNEL["_relay_tunnel()<br/>إنشاء نفق مشفر"]
+    
+    HTTP_FP --> PARSE["استخراج الهدف<br/>من URL"]
+    PARSE --> UPSTREAM["الاتصال بالسيرفر الهدف"]
+    UPSTREAM --> FORWARD["إعادة توجيه الطلب<br/>وإرجاع الرد"]
+```
+
+### 🔒 Reverse Proxy (البروكسي العكسي)
+
+```mermaid
+flowchart TD
+    CLIENT["👤 العميل"] --> RP["ReverseProxy<br/>handle_connection()<br/>SSL terminated"]
+    RP --> BACKEND["_select_backend()<br/>Round-Robin"]
+    BACKEND --> CONNECT["الاتصال بالـ Backend<br/>localhost:8000"]
+    CONNECT --> RELAY["relay_data()<br/>بالاتجاهين<br/>asyncio.gather()"]
+    RELAY --> DONE["✅ إغلاق الاتصال<br/>تسجيل الإحصائيات"]
+```
+
+---
+
+## المرحلة 5: محرك الذكاء الاصطناعي (ML Pipeline)
+
+```mermaid
+flowchart TD
+    PACKET["📦 Packet Data"] --> PROFILE["1. TrafficProfiler<br/>profile_connection()"]
+    PROFILE --> PATTERN["تحديد النمط<br/>NORMAL / SCAN / DDoS / C2"]
+    
+    PATTERN --> REP["2. get_ip_profile()<br/>سمعة الـ IP"]
+    REP --> FEATURES["3. _extract_features()<br/>استخراج 14 ميزة"]
+    
+    FEATURES --> ANOMALY["4. AnomalyDetector<br/>detect()"]
+    ANOMALY --> SCORE["anomaly_score + is_anomaly"]
+    
+    SCORE --> POLICY_ML["5. AdaptivePolicyEngine<br/>evaluate()"]
+    POLICY_ML --> DECISION{"القرار"}
+    
+    DECISION -- "ALLOW" --> ALLOW["✅ مرور"]
+    DECISION -- "BLOCK" --> BLOCK_ML["❌ حظر"]
+    DECISION -- "THROTTLE" --> THROTTLE["⚠️ تقييد"]
+    
+    BLOCK_ML --> FEEDBACK["6. add_feedback()<br/>تعلم من القرار"]
+    ALLOW --> FEEDBACK
+    THROTTLE --> FEEDBACK
+
+    style ANOMALY fill:#9C27B0,color:white
+    style POLICY_ML fill:#9C27B0,color:white
+```
+
+### ميزات ML المستخرجة (`TrafficFeatures`):
+
+| الميزة | الوصف |
+|--------|-------|
+| `packets_per_second` | معدل الحزم/ثانية |
+| `bytes_per_second` | معدل البايتات/ثانية |
+| `avg_packet_size` | متوسط حجم الحزمة |
+| `packet_size_variance` | تباين حجم الحزم |
+| `tcp_ratio` / `udp_ratio` | نسبة TCP و UDP |
+| `syn_ratio` | نسبة حزم SYN |
+| `unique_dst_ports` | عدد المنافذ الفريدة |
+| `inter_arrival_time_mean` | متوسط زمن الوصول |
+| `failed_connections` | الاتصالات الفاشلة |
+| `reputation_score` | درجة السمعة |
+
+---
+
+## المرحلة 6: REST API (FastAPI)
+
+```mermaid
+flowchart TD
+    API["🔌 FastAPI Server<br/>uvicorn :8000"] --> AUTH["JWT Authentication<br/>Bearer Token"]
+    
+    AUTH --> EP1["POST /auth/login<br/>تسجيل الدخول"]
+    AUTH --> EP2["GET /system/status<br/>حالة النظام"]
+    AUTH --> EP3["GET /traffic/stats<br/>إحصائيات الترافيك"]
+    AUTH --> EP4["CRUD /rules<br/>إدارة القواعد"]
+    AUTH --> EP5["GET /anomalies<br/>التقارير الأمنية"]
+    
+    EP2 --> NGFW["app.state.ngfw<br/>الوصول لكائن NGFW"]
+```
+
+---
+
+## الشجرة الكاملة - ملخص تسلسل التنفيذ
+
+```
+__main__
+└── asyncio.run(main())
+    └── NGFWApplication(config_path)
+        └── app.start()
+            ├── 1. load_config()          ← تحميل config.yaml
+            │   └── _validate_config()    ← التحقق من proxy, tls, logging
+            ├── 2. setup_logging()        ← إعداد RotatingFileHandler
+            ├── 3. initialize_components()
+            │   ├── CAPoolManager         ← شهادات الـ CA
+            │   ├── SSLInspector          ← اعتراض SSL (MITM)
+            │   ├── SSLPolicyEngine       ← سياسات الفحص
+            │   ├── TrafficRouter         ← توجيه حسب البورت
+            │   ├── FlowTracker          ← تتبع الاتصالات
+            │   ├── XDP Engine (eBPF)     ← تصفية على مستوى النواة
+            │   ├── ML Components
+            │   │   ├── AnomalyDetector   ← كشف الشذوذ
+            │   │   ├── TrafficProfiler   ← تحليل أنماط الترافيك
+            │   │   └── AdaptivePolicyEngine ← سياسات تكيفية
+            │   └── Proxy Modes
+            │       ├── TransparentProxy  ← وضع شفاف (MITM)
+            │       ├── ForwardProxy      ← بروكسي صريح
+            │       └── ReverseProxy      ← بروكسي عكسي
+            ├── 4. _setup_signal_handlers() ← SIGINT/SIGTERM
+            ├── 5. _print_banner()
+            └── 6. asyncio.gather()       ← تشغيل متوازي
+                ├── proxy.start()         ← استقبال الاتصالات
+                │   └── handle_connection()
+                │       ├── كشف البروتوكول (TLS/HTTP)
+                │       ├── استخراج الهدف (SNI/Host/CONNECT)
+                │       ├── فحص السياسات الأمنية
+                │       ├── اعتراض SSL (MITM)
+                │       │   ├── توليد شهادة ديناميكية
+                │       │   ├── TLS مع العميل
+                │       │   └── TLS مع السيرفر
+                │       └── relay_data() بالاتجاهين
+                ├── _ml_maintenance_loop() ← كل 60 ثانية
+                │   ├── profiler_stats
+                │   └── policy_metrics
+                └── _start_api_server()   ← FastAPI + uvicorn
+                    └── endpoints: login, status, rules, stats
+```
+
+---
+
+## هيكل الملفات المرتبطة
+
+```
+enterprise_ngfw/
+├── main.py                          ← 🚀 نقطة البداية
+├── ngfw_engine.py                   ← 🔧 محرك بديل (مع محاكاة)
+├── core/
+│   ├── router.py                    ← 🔀 توجيه الترافيك
+│   ├── flow_tracker.py              ← 📊 تتبع الاتصالات  
+│   ├── proxy_modes/
+│   │   ├── base_proxy.py            ← 📋 الكلاس الأساسي
+│   │   ├── transparent_proxy.py     ← 🔀 MITM + WAF
+│   │   ├── forward_proxy.py         ← 📡 HTTP CONNECT
+│   │   └── reverse_proxy.py         ← 🔒 Load Balancer
+│   └── ssl_engine/
+│       ├── ca_pool.py               ← 🔐 إدارة الشهادات
+│       ├── inspector.py             ← 🔍 فحص SSL
+│       ├── policy_engine.py         ← 📜 سياسات SSL
+│       └── sni_router.py            ← 🌐 توجيه SNI
+├── acceleration/ebpf/
+│   └── xdp_engine.py               ← ⚡ تسريع النواة
+├── ml/inference/
+│   ├── anomaly_detector.py          ← 🧠 كشف الشذوذ
+│   ├── traffic_profiler.py          ← 📈 تحليل الأنماط
+│   └── adaptive_policy.py           ← 🎯 سياسات تكيفية
+├── api/rest/
+│   └── main.py                      ← 🔌 FastAPI REST API
+├── inspection/                      ← 🔎 Deep Packet Inspection
+├── policy/                          ← 📋 Smart Blocker + Rules
+└── config/                          ← ⚙️ الإعدادات
+```
