@@ -43,6 +43,12 @@ class WebFilterEngine:
                 return Action.BLOCK
                 
         # Check Exact URLs (from rules)
-        # if context.url in blocked_urls: return Action.BLOCK
+        if context.url:
+            for rule in self.rules:
+                if not rule.enabled:
+                    continue
+                if context.url in rule.exact_urls:
+                    self.logger.info(f"WebFilter Blocked URL: {context.url}")
+                    return rule.action
         
         return Action.ALLOW

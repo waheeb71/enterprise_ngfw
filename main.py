@@ -30,7 +30,10 @@ from typing import Optional
 import argparse
 
 # Core components
-from core.router import TrafficRouter
+from core.router import TrafficRouter, RoutingDecision, ProxyMode
+#from core.router.dispatcher import RouteDispatcher
+#from core.router.policy_integration import PolicyRouter
+#from core.router.utils import create_routing_context
 from core.flow_tracker import FlowTracker
 from core.ssl_engine.ca_pool import CAPoolManager
 from core.ssl_engine.inspector import SSLInspector

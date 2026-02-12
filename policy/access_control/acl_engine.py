@@ -16,11 +16,11 @@ class ACLEngine:
     Supports Zones (LAN, WAN, DMZ).
     """
     
-    def __init__(self):
+    def __init__(self, default_action: Action = Action.ALLOW):
         self.rules: List[FirewallRule] = []
         self.logger = logger
         # Default policy is usually implicit deny, but we start with allow for safety
-        self.default_action = Action.ALLOW 
+        self.default_action = default_action 
 
     def load_rules(self, rules: List[FirewallRule]):
         """Load rules and sort by priority"""
@@ -91,9 +91,22 @@ class ACLEngine:
             self.logger.warning(f"Invalid IP rule format: {rule_ip}")
             return False
 
-    def _match_port(self, rule_port: Union[int, str], packet_port: int) -> bool:
+    def _match_port(self, rule_port: Union[int, str, List[Union[int, str]]], packet_port: int) -> bool:
         """Match Port (supports range '80-90', list, single)"""
-        # Simplify: assume rule_port matches packet_port
-        # In reality, parse ranges
-        if rule_port == "any": return True
-        return str(rule_port) == str(packet_port)
+        if rule_port == "any":
+            return True
+        if isinstance(rule_port, list):
+            return any(self._match_port(rp, packet_port) for rp in rule_port)
+        if isinstance(rule_port, int):
+            return rule_port == packet_port
+        # String handling
+        if "-" in rule_port:
+            start_s, end_s = rule_port.split("-", 1)
+            try:
+                start = int(start_s.strip())
+                end = int(end_s.strip())
+                return start <= packet_port <= end
+            except ValueError:
+                self.logger.warning(f"Invalid port range: {rule_port}")
+                return False
+        return str(rule_port).strip() == str(packet_port)
