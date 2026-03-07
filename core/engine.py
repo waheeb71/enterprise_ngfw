@@ -110,7 +110,7 @@ class NGFWApplication:
     def load_config(self):
         logger.info(f"Loading configuration from {self.config_path}")
         try:
-            with open(self.config_path, 'r') as f:
+            with open(self.config_path, 'r', encoding='utf-8', errors='replace') as f:
                 self.config = yaml.safe_load(f)
             
             logger.info("✅ Configuration loaded successfully")
@@ -145,7 +145,8 @@ class NGFWApplication:
         file_handler = logging.handlers.RotatingFileHandler(
             log_file,
             maxBytes=log_config.get('max_bytes', 104857600),
-            backupCount=log_config.get('backup_count', 10)
+            backupCount=log_config.get('backup_count', 10),
+            encoding='utf-8'
         )
         file_handler.setFormatter(
             logging.Formatter(
