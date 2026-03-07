@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  ngfw:
+    build: .
+    image: enterprise-ngfw:latest
+    container_name: enterprise-ngfw
+    restart: always
+    privileged: true  # Required for eBPF/XDP
+    network_mode: "host"  # Required for transparent proxying
+    volumes:
+      - ./config/defaults/base.yaml:/etc/ngfw/config.yaml
+      - ./certs:/etc/ngfw/certs
+      - ./logs:/var/log/ngfw
+    environment:
+      - LOG_LEVEL=INFO
+    depends_on:
+      - prometheus
+
+  prometheus:
+    image: prom/prometheus
+    container_name: ngfw-prometheus
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+
+  # Optional: Suricata for IDS
+  # suricata:
+  #   image: jasonish/suricata:latest
+  #   network_mode: "host"
+  #   volumes:
+  #     - ./logs/suricata:/var/log/suricata
