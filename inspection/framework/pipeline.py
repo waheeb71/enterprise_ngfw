@@ -14,46 +14,8 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 import threading
 
-from .plugin_base import InspectorPlugin, InspectionContext
+from .plugin_base import InspectorPlugin, InspectionContext, InspectionFinding, InspectionResult, InspectionAction
 
-
-class InspectionAction(IntEnum):
-    """Action to take after inspection"""
-    ALLOW = 0
-    BLOCK = 1
-    DROP = 2  # Silent drop
-    QUARANTINE = 3  # Hold for review
-    LOG_ONLY = 4
-
-
-@dataclass
-class InspectionFinding:
-    """A single finding from inspection"""
-    severity: str  # 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'
-    category: str  # e.g., 'malware', 'dlp', 'protocol_violation'
-    description: str
-    plugin_name: str
-    confidence: float = 1.0  # 0.0-1.0
-    evidence: Dict = field(default_factory=dict)
-
-
-@dataclass
-class InspectionResult:
-    """Result from inspection pipeline"""
-    action: InspectionAction
-    findings: List[InspectionFinding] = field(default_factory=list)
-    metadata: Dict = field(default_factory=dict)
-    processing_time_ms: float = 0.0
-    
-    @property
-    def is_blocked(self) -> bool:
-        """Check if traffic should be blocked"""
-        return self.action in (InspectionAction.BLOCK, InspectionAction.DROP)
-        
-    @property
-    def has_critical_findings(self) -> bool:
-        """Check if any critical findings exist"""
-        return any(f.severity == 'CRITICAL' for f in self.findings)
 
 
 class InspectionPipeline:

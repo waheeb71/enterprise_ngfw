@@ -14,6 +14,15 @@ from dataclasses import dataclass
 from enum import IntEnum
 
 
+class InspectionAction(IntEnum):
+    """Action to take after inspection"""
+    ALLOW = 0
+    BLOCK = 1
+    DROP = 2  # Silent drop
+    QUARANTINE = 3  # Hold for review
+    LOG_ONLY = 4
+
+
 class PluginPriority(IntEnum):
     """Plugin execution priority (lower = earlier)"""
     HIGHEST = 0
@@ -35,6 +44,49 @@ class InspectionContext:
     flow_id: str  # Unique flow identifier
     timestamp: float
     metadata: Dict[str, Any]
+
+
+
+@dataclass
+class InspectionFinding:
+    """A single finding produced by an inspection plugin"""
+    plugin_name: str
+    severity: str           # 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'
+    category: str           # e.g. "DLP", "SQL Injection", "XSS"
+    description: str
+    confidence: float = 1.0  # 0.0 – 1.0
+    recommends_block: bool = False
+    metadata: Dict[str, Any] = None
+    evidence: Dict[str, Any] = None
+
+    def __post_init__(self):
+        if self.metadata is None:
+            self.metadata = {}
+        if self.evidence is None:
+            self.evidence = {}
+
+
+@dataclass
+class InspectionResult:
+    """Aggregated result returned by an inspection"""
+    action: InspectionAction = InspectionAction.ALLOW
+    findings: List[InspectionFinding] = None
+    metadata: Dict[str, Any] = None
+    processing_time_ms: float = 0.0
+
+    def __post_init__(self):
+        if self.findings is None:
+            self.findings = []
+        if self.metadata is None:
+            self.metadata = {}
+            
+    @property
+    def is_blocked(self) -> bool:
+        """Check if traffic should be blocked"""
+        return self.action in (InspectionAction.BLOCK, InspectionAction.DROP)
+
+
+
 
 
 class InspectorPlugin(ABC):

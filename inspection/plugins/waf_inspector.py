@@ -10,14 +10,15 @@ import urllib.parse
 import logging
 from dataclasses import dataclass
 from typing import List
-from ..framework.plugin_base import InspectorPlugin, InspectionContext, InspectionFinding
+from ..framework.plugin_base import InspectorPlugin, InspectionContext, InspectionFinding, InspectionResult, InspectionAction
+
 
 @dataclass
 class WAFRule:
     id: str
     name: str
     pattern: re.Pattern
-    severity: int
+    severity: str   # 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'
     category: str
 
 class WAFInspectorPlugin(InspectorPlugin):
@@ -34,7 +35,7 @@ class WAFInspectorPlugin(InspectorPlugin):
                 id="WAF_SQLI_1",
                 name="Basic SQL Injection",
                 pattern=re.compile(rb'(?i)(UNION\s+SELECT|SELECT\s+.*\s+FROM|INSERT\s+INTO|UPDATE\s+.*\s+SET|DROP\s+TABLE)'),
-                severity=9,
+                severity="CRITICAL",
                 category="SQL Injection"
             ),
             # Cross-Site Scripting (XSS)
@@ -42,15 +43,15 @@ class WAFInspectorPlugin(InspectorPlugin):
                 id="WAF_XSS_1",
                 name="Basic XSS",
                 pattern=re.compile(rb'(?i)(<script.*?>.*?</script>|javascript:|onerror=|onload=)'),
-                severity=8,
+                severity="HIGH",
                 category="Cross-Site Scripting"
             ),
             # Local File Inclusion (LFI)
             WAFRule(
                 id="WAF_LFI_1",
                 name="Directory Traversal / LFI",
-                pattern=re.compile(rb'(?i)(\.\./\.\./|etc/passwd|windows/system32/cmd\.exe)'),
-                severity=9,
+                pattern=re.compile(rb'(?i)(\.\.\/\.\.\/|etc/passwd|windows/system32/cmd\.exe)'),
+                severity="CRITICAL",
                 category="Local File Inclusion"
             ),
             # Command Injection
@@ -58,7 +59,7 @@ class WAFInspectorPlugin(InspectorPlugin):
                 id="WAF_CMD_1",
                 name="Command Injection",
                 pattern=re.compile(rb'(?i)(;\s*ls\s+-|;\s*cat\s+|;\s*wget\s+|;\s*curl\s+|\|\s*sh\s*)'),
-                severity=10,
+                severity="CRITICAL",
                 category="Command Injection"
             )
         ]
@@ -70,24 +71,26 @@ class WAFInspectorPlugin(InspectorPlugin):
     @property
     def priority(self) -> int:
         return 50  # High priority, inspect before others but after core
-        
+
+    def can_inspect(self, context: InspectionContext) -> bool:
+        """WAF targets HTTP/HTTPS traffic (ports 80, 443, 8080, 8443)"""
+        return context.dst_port in (80, 443, 8080, 8443) or context.src_port in (80, 443, 8080, 8443)
+
     async def initialize(self) -> None:
         pass
         
     async def shutdown(self) -> None:
         pass
         
-    async def inspect(self, context: InspectionContext, data: bytes) -> List[InspectionFinding]:
+    def inspect(self, context: InspectionContext, data: bytes) -> InspectionResult:
         findings = []
         
         # WAF primarily targets inbound HTTP/HTTPS traffic to protected servers
         if context.direction == "outbound" and not context.metadata.get("inspect_outbound_waf", False):
-            return []
+            return InspectionResult(action=InspectionAction.ALLOW, findings=[])
             
         # Decode URL encoding to prevent evasion
         try:
-            # We must convert to string to use urllib.parse.unquote properly,
-            # but we catch errors if it's binary data
             decoded_data = urllib.parse.unquote_to_bytes(data)
         except Exception:
             decoded_data = data
@@ -106,5 +109,7 @@ class WAFInspectorPlugin(InspectorPlugin):
                         metadata={"rule_id": rule.id}
                     )
                 )
-                
-        return findings
+        
+        should_block = self.block_on_match and bool(findings)
+        action = InspectionAction.BLOCK if should_block else InspectionAction.ALLOW
+        return InspectionResult(action=action, findings=findings)

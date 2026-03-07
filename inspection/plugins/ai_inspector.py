@@ -10,8 +10,9 @@ import time
 import math
 from typing import Optional, Dict, Any
 
-from ..framework.plugin_base import InspectorPlugin, InspectionContext, PluginPriority
-from ..framework.pipeline import InspectionResult, InspectionAction, InspectionFinding
+from ..framework.plugin_base import InspectorPlugin, InspectionContext, PluginPriority, InspectionFinding, InspectionResult, InspectionAction
+
+
 
 from ml.inference.deep_learning import DeepTrafficClassifier, ThreatCategory
 

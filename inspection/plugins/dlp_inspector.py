@@ -8,15 +8,16 @@ confidential keywords to prevent data exfiltration.
 import re
 import logging
 from dataclasses import dataclass
-from typing import List, Dict, Tuple
-from ..framework.plugin_base import InspectorPlugin, InspectionContext, InspectionFinding
+from typing import List
+from ..framework.plugin_base import InspectorPlugin, InspectionContext, InspectionFinding, InspectionResult, InspectionAction
+
 
 @dataclass
 class DLPRule:
     id: str
     name: str
     pattern: re.Pattern
-    severity: int
+    severity: str   # 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'
     description: str
 
 class DLPInspectorPlugin(InspectorPlugin):
@@ -33,7 +34,7 @@ class DLPInspectorPlugin(InspectorPlugin):
                 id="DLP_CREDIT_CARD",
                 name="Credit Card Number",
                 pattern=re.compile(rb'\b(?:\d[ -]*?){13,16}\b'),
-                severity=9,
+                severity="HIGH",
                 description="Potential credit card number detected in payload"
             ),
             # US Social Security Number (basic format)
@@ -41,14 +42,14 @@ class DLPInspectorPlugin(InspectorPlugin):
                 id="DLP_SSN",
                 name="Social Security Number",
                 pattern=re.compile(rb'\b\d{3}-\d{2}-\d{4}\b'),
-                severity=8,
+                severity="HIGH",
                 description="Potential US SSN detected in payload"
             ),
             DLPRule(
                 id="DLP_CONFIDENTIAL",
                 name="Confidential Keyword",
                 pattern=re.compile(rb'(?i)\b(?:confidential|strictly private|internal use only|do not distribute)\b'),
-                severity=5,
+                severity="MEDIUM",
                 description="Confidential keywords detected in payload"
             )
         ]
@@ -61,18 +62,22 @@ class DLPInspectorPlugin(InspectorPlugin):
     def priority(self) -> int:
         return 60  # Mid priority
         
+    def can_inspect(self, context: InspectionContext) -> bool:
+        """DLP runs on all traffic, skip inbound unless configured"""
+        return True
+
     async def initialize(self) -> None:
         pass
         
     async def shutdown(self) -> None:
         pass
         
-    async def inspect(self, context: InspectionContext, data: bytes) -> List[InspectionFinding]:
+    def inspect(self, context: InspectionContext, data: bytes) -> InspectionResult:
         findings = []
         
         # Only inspect outbound traffic if specified, or all traffic
         if context.direction == "inbound" and not context.metadata.get("inspect_inbound_dlp", False):
-            return []
+            return InspectionResult(action=InspectionAction.ALLOW, findings=[])
             
         for rule in self.rules:
             matches = rule.pattern.findall(data)
@@ -88,5 +93,7 @@ class DLPInspectorPlugin(InspectorPlugin):
                         metadata={"rule_id": rule.id, "match_count": len(matches)}
                     )
                 )
-                
-        return findings
+        
+        should_block = self.block_on_match and bool(findings)
+        action = InspectionAction.BLOCK if should_block else InspectionAction.ALLOW
+        return InspectionResult(action=action, findings=findings)
