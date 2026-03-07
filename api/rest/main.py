@@ -6,10 +6,12 @@ Production-ready REST API with authentication, rate limiting, and comprehensive 
 
 import logging
 import os
+import secrets
 from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
 
+import bcrypt
 from fastapi import FastAPI, HTTPException, Depends, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,11 +22,28 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
+# Prometheus metrics
+from telemetry.prometheus_metrics import metrics_endpoint
+
+# Core routers
+from api.rest.routers import system, ai, certificates, qos, vpn, firewall, traffic, interfaces, logs
+
+# Database
+from core.database import User
+from sqlalchemy.orm import Session
+
 logger = logging.getLogger(__name__)
 
 # JWT Configuration
-# JWT Configuration
-SECRET_KEY = os.getenv("NGFW_SECRET_KEY", "your-secret-key-change-in-production")
+_env_secret = os.getenv("NGFW_SECRET_KEY", "")
+if _env_secret:
+    SECRET_KEY = _env_secret
+else:
+    SECRET_KEY = secrets.token_hex(32)
+    logger.warning(
+        "⚠️ NGFW_SECRET_KEY not set! Using auto-generated key. "
+        "Set NGFW_SECRET_KEY environment variable for production."
+    )
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
@@ -33,6 +52,10 @@ limiter = Limiter(key_func=get_remote_address)
 
 
 # ==================== Pydantic Models ====================
+class ConfigUpdate(BaseModel):
+    category: str = Field(..., description="Configuration category (e.g. system, network, ai)")
+    key: str = Field(..., description="The exact YAML key to update")
+    value: Any = Field(..., description="The new value for the key")
 
 class Token(BaseModel):
     access_token: str
@@ -44,37 +67,6 @@ class LoginRequest(BaseModel):
     password: str
 
 
-class FirewallRule(BaseModel):
-    rule_id: Optional[str] = None
-    src_ip: Optional[str] = Field(None, description="Source IP (CIDR notation)")
-    dst_ip: Optional[str] = Field(None, description="Destination IP (CIDR notation)")
-    dst_port: Optional[int] = Field(None, ge=1, le=65535)
-    protocol: Optional[str] = Field(None, pattern="^(TCP|UDP|ICMP|ALL)$")
-    action: str = Field(..., pattern="^(ALLOW|BLOCK|THROTTLE)$")
-    priority: int = Field(100, ge=1, le=1000)
-    enabled: bool = True
-
-
-class TrafficStats(BaseModel):
-    timestamp: datetime
-    total_packets: int
-    total_bytes: int
-    blocked_packets: int
-    allowed_packets: int
-    unique_sources: int
-    unique_destinations: int
-    top_protocols: Dict[str, int]
-
-
-class AnomalyReport(BaseModel):
-    timestamp: datetime
-    src_ip: str
-    anomaly_score: float
-    is_anomaly: bool
-    reason: str
-    confidence: float
-
-
 class SystemStatus(BaseModel):
     status: str
     uptime_seconds: float
@@ -83,6 +75,9 @@ class SystemStatus(BaseModel):
     active_connections: int
     rules_count: int
     ml_models_loaded: bool
+    ha_state: str = Field("UNKNOWN", description="Current node HA state")
+    ha_peer: Optional[str] = Field(None, description="IP of the HA peer node")
+    ha_priority: int = Field(0, description="Priority of the current node")
 
 
 class PolicyEvaluation(BaseModel):
@@ -92,22 +87,38 @@ class PolicyEvaluation(BaseModel):
     matched_rules: List[str]
 
 
+class VPNPeerRequest(BaseModel):
+    public_key: str = Field(..., description="WireGuard Public Key")
+    allowed_ips: List[str] = Field(..., description="List of allowed IP addresses/CIDRs")
+    endpoint: Optional[str] = Field(None, description="Optional peer endpoint IP:PORT")
+    preshared_key: Optional[str] = Field(None, description="Optional preshared key")
+    persistent_keepalive: Optional[int] = Field(25, description="Keepalive interval in seconds")
+
+
+class QoSConfigRequest(BaseModel):
+    enabled: bool = Field(..., description="Enable or disable QoS shaping")
+    default_user_rate_bytes: int = Field(..., description="Default rate limit per user in bytes/sec")
+    default_user_burst_bytes: int = Field(..., description="Default burst limit per user in bytes")
+
+
 # ==================== Authentication ====================
 
 security = HTTPBearer()
 
-# Simple user database (replace with real database in production)
-# Simple user database (replace with real database in production)
-USERS_DB = {
-    "admin": {
-        "password": os.getenv("NGFW_ADMIN_PASSWORD", "admin123"),
-        "role": "admin"
-    },
-    "operator": {
-        "password": os.getenv("NGFW_OPERATOR_PASSWORD", "operator123"),
-        "role": "operator"
-    }
-}
+# ==================== Password Hashing ====================
+
+def _hash_password(password: str) -> str:
+    """Hash a password using bcrypt"""
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+
+def _verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify a password against its bcrypt hash"""
+    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+
+
+# User database configuration handled by core.database.DatabaseManager
+# Default users are created on startup if they don't exist.
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
@@ -178,39 +189,62 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("NGFW_ALLOWED_ORIGINS", "*").split(","),
+    allow_origins=os.getenv("NGFW_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8888").split(","),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+app.include_router(system.router)
+app.include_router(ai.router)
+app.include_router(certificates.router)
+app.include_router(qos.router)
+app.include_router(vpn.router)
+app.include_router(firewall.router)
+app.include_router(traffic.router)
+app.include_router(interfaces.router)
+app.include_router(logs.router)
 
 # ==================== API Endpoints ====================
 
 @app.post("/api/v1/auth/login", response_model=Token)
 @limiter.limit("5/minute")
-async def login(request: Request, login_data: LoginRequest):
-    """
-    Authenticate user and get access token
-    
-    Rate limit: 5 requests per minute
-    """
-    user = USERS_DB.get(login_data.username)
-    
-    if not user or user["password"] != login_data.password:
+async def login_for_access_token(
+    request: Request,
+    login_data: LoginRequest
+):
+    # Get DB session from app state
+    if not hasattr(request.app.state, 'ngfw') or not request.app.state.ngfw:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password"
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="NGFW not initialized"
         )
     
-    access_token = create_access_token(
-        data={"sub": login_data.username, "role": user["role"]},
-        expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    )
+    db = request.app.state.ngfw.db
     
-    logger.info(f"User {login_data.username} logged in")
-    
-    return Token(access_token=access_token)
+    with db.session() as session:
+        user = session.query(User).filter(User.username == login_data.username).first()
+        
+        if not user or not _verify_password(login_data.password, user.password_hash):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect username or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+            
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": user.username, "role": user.role},
+            expires_delta=access_token_expires
+        )
+        
+        # Update last login
+        user.last_login = datetime.utcnow()
+        session.commit()
+        
+        logger.info(f"User {login_data.username} logged in")
+        
+        return {"access_token": access_token, "token_type": "bearer"}
 
 
 @app.get("/api/v1/status", response_model=SystemStatus)
@@ -224,260 +258,140 @@ async def get_system_status(request: Request, token: dict = Depends(verify_token
     """
     import psutil
     
+    ha_state = "MASTER" # Default fallback
+    ha_peer = "192.168.1.2"
+    ha_priority = 100
+    uptime = 3600.0
+    active_conn = 0
+    rules = 0
+
+    try:
+        # If running inside the unified Enterprise NGFW context, extract dynamic variables
+        if hasattr(request.app.state, 'ngfw_app'):
+            ngfw = request.app.state.ngfw_app
+            if ngfw.ha_manager:
+                ha_state = ngfw.ha_manager.state.name
+                ha_peer = ngfw.ha_manager.peer_ip
+                ha_priority = ngfw.ha_manager.priority
+            uptime = ngfw.get_uptime() if hasattr(ngfw, 'get_uptime') else 3600.0
+    except Exception as e:
+        logger.error(f"Error fetching extended HA status: {e}")
+
     return SystemStatus(
         status="operational",
-        uptime_seconds=3600.0,  # Replace with actual uptime
+        uptime_seconds=uptime,  
         cpu_usage=psutil.cpu_percent(),
         memory_usage=psutil.virtual_memory().percent,
-        active_connections=0,  # Replace with actual count
-        rules_count=0,  # Replace with actual count
-        ml_models_loaded=True
+        active_connections=active_conn, 
+        rules_count=rules, 
+        ml_models_loaded=True,
+        ha_state=ha_state,
+        ha_peer=ha_peer,
+        ha_priority=ha_priority
     )
 
 
-@app.get("/api/v1/statistics", response_model=TrafficStats)
-@limiter.limit("60/minute")
-async def get_traffic_statistics(
-    request: Request,
-    time_window: int = 300,
-    token: dict = Depends(verify_token)
-):
-    """
-    Get traffic statistics for specified time window
-    
-    Args:
-        time_window: Time window in seconds (default: 300)
-    
-    Rate limit: 60 requests per minute
-    Requires: Valid authentication token
-    """
-    # Replace with actual statistics from NGFW
-    return TrafficStats(
-        timestamp=datetime.now(),
-        total_packets=1000000,
-        total_bytes=500000000,
-        blocked_packets=5000,
-        allowed_packets=995000,
-        unique_sources=500,
-        unique_destinations=1000,
-        top_protocols={"TCP": 800000, "UDP": 150000, "ICMP": 50000}
-    )
-
-
-@app.get("/api/v1/rules", response_model=List[FirewallRule])
-@limiter.limit("60/minute")
-async def list_rules(request: Request, token: dict = Depends(verify_token)):
-    """
-    List all firewall rules
-    
-    Rate limit: 60 requests per minute
-    Requires: Valid authentication token
-    """
-    # Replace with actual rules from policy engine
-    return []
-
-
-@app.post("/api/v1/rules", response_model=FirewallRule, status_code=status.HTTP_201_CREATED)
-@limiter.limit("30/minute")
-async def create_rule(
-    request: Request,
-    rule: FirewallRule,
-    token: dict = Depends(require_admin)
-):
-    """
-    Create a new firewall rule
-    
-    Rate limit: 30 requests per minute
-    Requires: Admin role
-    """
-    # Validate rule
-    if not any([rule.src_ip, rule.dst_ip, rule.dst_port]):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="At least one of src_ip, dst_ip, or dst_port must be specified"
-        )
-    
-    # Generate rule ID
-    rule.rule_id = f"rule_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    
-    # Add rule to policy engine (implement this)
-    logger.info(f"Created rule {rule.rule_id}: {rule.dict()}")
-    
-    return rule
-
-
-@app.get("/api/v1/rules/{rule_id}", response_model=FirewallRule)
-@limiter.limit("60/minute")
-async def get_rule(
-    request: Request,
-    rule_id: str,
-    token: dict = Depends(verify_token)
-):
-    """
-    Get specific firewall rule
-    
-    Rate limit: 60 requests per minute
-    Requires: Valid authentication token
-    """
-    # Retrieve rule from policy engine
-    raise HTTPException(status_code=404, detail="Rule not found")
-
-
-@app.put("/api/v1/rules/{rule_id}", response_model=FirewallRule)
-@limiter.limit("30/minute")
-async def update_rule(
-    request: Request,
-    rule_id: str,
-    rule: FirewallRule,
-    token: dict = Depends(require_admin)
-):
-    """
-    Update existing firewall rule
-    
-    Rate limit: 30 requests per minute
-    Requires: Admin role
-    """
-    rule.rule_id = rule_id
-    logger.info(f"Updated rule {rule_id}: {rule.dict()}")
-    return rule
-
-
-@app.delete("/api/v1/rules/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
-@limiter.limit("30/minute")
-async def delete_rule(
-    request: Request,
-    rule_id: str,
-    token: dict = Depends(require_admin)
-):
-    """
-    Delete firewall rule
-    
-    Rate limit: 30 requests per minute
-    Requires: Admin role
-    """
-    logger.info(f"Deleted rule {rule_id}")
-    return None
-
-
-@app.get("/api/v1/anomalies", response_model=List[AnomalyReport])
-@limiter.limit("60/minute")
-async def get_anomalies(
-    request: Request,
-    limit: int = 100,
-    token: dict = Depends(verify_token)
-):
-    """
-    Get recent anomaly detections
-    
-    Args:
-        limit: Maximum number of results (default: 100)
-    
-    Rate limit: 60 requests per minute
-    Requires: Valid authentication token
-    """
-    # Retrieve from anomaly detector
-    return []
-
-
-@app.post("/api/v1/policy/evaluate", response_model=PolicyEvaluation)
-@limiter.limit("1000/minute")
-async def evaluate_policy(
-    request: Request,
-    src_ip: str,
-    dst_ip: str,
-    dst_port: int,
-    protocol: str,
-    token: dict = Depends(verify_token)
-):
-    """
-    Evaluate traffic against current policies
-    
-    Rate limit: 1000 requests per minute
-    Requires: Valid authentication token
-    """
-    # Evaluate using adaptive policy engine
-    return PolicyEvaluation(
-        action="ALLOW",
-        confidence=0.95,
-        reason="No threats detected",
-        matched_rules=[]
-    )
-
-
-@app.post("/api/v1/block/{ip_address}", status_code=status.HTTP_200_OK)
-@limiter.limit("30/minute")
-async def block_ip(
-    request: Request,
-    ip_address: str,
-    duration: int = 3600,
-    token: dict = Depends(require_admin)
-):
-    """
-    Block an IP address
-    
-    Args:
-        ip_address: IP to block
-        duration: Block duration in seconds (default: 3600)
-    
-    Rate limit: 30 requests per minute
-    Requires: Admin role
-    """
-    logger.info(f"Blocking IP {ip_address} for {duration} seconds")
-    
-    return {
-        "status": "success",
-        "ip_address": ip_address,
-        "blocked_until": datetime.now() + timedelta(seconds=duration)
-    }
-
-
-@app.delete("/api/v1/block/{ip_address}", status_code=status.HTTP_204_NO_CONTENT)
-@limiter.limit("30/minute")
-async def unblock_ip(
-    request: Request,
-    ip_address: str,
-    token: dict = Depends(require_admin)
-):
-    """
-    Unblock an IP address
-    
-    Rate limit: 30 requests per minute
-    Requires: Admin role
-    """
-    logger.info(f"Unblocking IP {ip_address}")
-    return None
-
-
-@app.get("/api/v1/profiles/{ip_address}")
-@limiter.limit("60/minute")
-async def get_ip_profile(
-    request: Request,
-    ip_address: str,
-    token: dict = Depends(verify_token)
-):
-    """
-    Get behavioral profile for an IP address
-    
-    Rate limit: 60 requests per minute
-    Requires: Valid authentication token
-    """
-    # Retrieve from traffic profiler
-    return {
-        "ip": ip_address,
-        "reputation_score": 85.0,
-        "total_connections": 1000,
-        "patterns_detected": [],
-        "first_seen": datetime.now() - timedelta(days=7),
-        "last_seen": datetime.now()
-    }
-
-
-@app.get("/api/v1/health")
+@app.get("/health")
 async def health_check():
     """
-    Health check endpoint (no authentication required)
+    Basic health check endpoint (no authentication required)
+    Used for load balancer health checks
     """
     return {"status": "healthy", "timestamp": datetime.now()}
+
+
+@app.get("/api/v1/health/liveness")
+async def liveness_probe():
+    """
+    Liveness probe - is the application alive?
+    Returns 200 if alive, 503 if dead
+    No authentication required
+    """
+    try:
+        ngfw_app = app.state.ngfw_app if hasattr(app.state, 'ngfw_app') else None
+        
+        if ngfw_app and hasattr(ngfw_app, 'health_checker'):
+            is_alive = await ngfw_app.health_checker.liveness_probe()
+            
+            if is_alive:
+                return {"status": "alive", "timestamp": datetime.now()}
+            else:
+                return JSONResponse(
+                    status_code=503,
+                    content={"status": "dead", "timestamp": datetime.now().isoformat()}
+                )
+        else:
+            return {"status": "alive", "timestamp": datetime.now()}
+            
+    except Exception as e:
+        logger.error(f"Liveness probe error: {e}")
+        return JSONResponse(status_code=503, content={"status": "error", "error": str(e)})
+
+
+@app.get("/api/v1/health/readiness")
+async def readiness_probe():
+    """
+    Readiness probe - is the application ready to accept traffic?
+    Returns 200 if ready, 503 if not ready
+    No authentication required
+    """
+    try:
+        ngfw_app = app.state.ngfw_app if hasattr(app.state, 'ngfw_app') else None
+        
+        if ngfw_app and hasattr(ngfw_app, 'health_checker'):
+            is_ready = await ngfw_app.health_checker.readiness_probe()
+            
+            if is_ready:
+                return {"status": "ready", "timestamp": datetime.now()}
+            else:
+                return JSONResponse(
+                    status_code=503,
+                    content={"status": "not_ready", "timestamp": datetime.now().isoformat()}
+                )
+        else:
+            return JSONResponse(
+                status_code=503,
+                content={"status": "not_ready", "reason": "Health checker not initialized"}
+            )
+            
+    except Exception as e:
+        logger.error(f"Readiness probe error: {e}")
+        return JSONResponse(status_code=503, content={"status": "error", "error": str(e)})
+
+
+@app.get("/metrics", include_in_schema=False)
+async def get_metrics():
+    """
+    Prometheus metrics endpoint
+    """
+    return await metrics_endpoint()
+
+
+@app.get("/api/v1/health/detailed")
+@limiter.limit("10/minute")
+async def detailed_health_check(request: Request, token: dict = Depends(verify_token)):
+    """
+    Detailed health check with component statuses
+    
+    Rate limit: 10 requests per minute
+    Requires: Valid authentication token
+    """
+    try:
+        ngfw_app = app.state.ngfw_app if hasattr(app.state, 'ngfw_app') else None
+        
+        if ngfw_app and hasattr(ngfw_app, 'health_checker'):
+            health_status = await ngfw_app.health_checker.check_all_components()
+            return health_status
+        else:
+            return {
+                "overall_status": "unknown",
+                "message": "Health checker not available",
+                "timestamp": datetime.now()
+            }
+            
+    except Exception as e:
+        logger.error(f"Detailed health check error: {e}")
+        raise HTTPException(status_code=500, detail=f"Health check failed: {str(e)}")
 
 
 # ==================== Error Handlers ====================
@@ -507,8 +421,82 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
 
 
-# ==================== Main Entry Point ====================
+# ==================== Configuration Endpoints ====================
 
+@app.get("/api/v1/config")
+@limiter.limit("30/minute")
+async def get_configuration(request: Request, token: dict = Depends(require_admin)):
+    """
+    Get current system configuration
+    Requires: Admin role
+    """
+    import yaml
+    from pathlib import Path
+    
+    # Try to locate the active config file
+    config_path = os.getenv("NGFW_CONFIG", "/etc/ngfw/config.yaml")
+    if not os.path.exists(config_path):
+        # Fallback to local dev path
+        config_path = Path(__file__).parent.parent.parent / "config" / "defaults" / "base.yaml"
+    
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config_data = yaml.safe_load(f)
+        return config_data
+    except Exception as e:
+        logger.error(f"Failed to read config: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to read configuration: {str(e)}"
+        )
+
+@app.put("/api/v1/config")
+@limiter.limit("10/minute")
+async def update_configuration(request: Request, update: ConfigUpdate, token: dict = Depends(require_admin)):
+    """
+    Update a specific configuration value and reload system
+    Requires: Admin role
+    """
+    import yaml
+    from pathlib import Path
+    
+    config_path = os.getenv("NGFW_CONFIG", "/etc/ngfw/config.yaml")
+    if not os.path.exists(config_path):
+        config_path = Path(__file__).parent.parent.parent / "config" / "defaults" / "base.yaml"
+    
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config_data = yaml.safe_load(f) or {}
+            
+        # Update nested dictionary
+        if update.category not in config_data:
+            config_data[update.category] = {}
+        
+        config_data[update.category][update.key] = update.value
+        
+        # Write back
+        with open(config_path, 'w', encoding='utf-8') as f:
+            yaml.dump(config_data, f, default_flow_style=False)
+            
+        # Try to hot-reload if running in unified app
+        if hasattr(request.app.state, 'ngfw_app'):
+            try:
+                request.app.state.ngfw_app.reload_config()
+            except Exception as e:
+                logger.warning(f"Could not hot-reload config: {e}")
+
+        return {"status": "success", "message": f"Updated {update.category}.{update.key}"}
+        
+    except Exception as e:
+        logger.error(f"Failed to update config: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update configuration: {str(e)}"
+        )
+
+
+# ==================== Core Application Instantiation fallback ====================
+# Run natively only if not imported by unified system
 if __name__ == "__main__":
     import uvicorn
     

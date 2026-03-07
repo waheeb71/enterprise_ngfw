@@ -34,6 +34,11 @@ class TrafficRouter:
         
         logger.info(f"Traffic Router initialized (default_mode={self.dispatcher.default_mode.value})")
         
+    def set_orchestrator(self, orchestrator):
+        """Set the MitigationOrchestrator down to the policy integrator"""
+        self.policy_integrator.orchestrator = orchestrator
+        logger.info("MitigationOrchestrator linked to Traffic Router")
+        
     async def route(self, 
                    client_addr: Tuple[str, int],
                    local_port: int,

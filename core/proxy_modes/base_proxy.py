@@ -17,6 +17,8 @@ from typing import Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime
 
+from core.traffic import QoSManager
+
 logger = logging.getLogger(__name__)
 
 
@@ -58,6 +60,9 @@ class BaseProxy(ABC):
     def __init__(self, config: dict):
         self.config = config
         self.proxy_config = config.get('proxy', {})
+        
+        # QoS Integration
+        self.qos_manager = QoSManager(config)
         
         # Statistics
         self.stats = {
@@ -117,7 +122,11 @@ class BaseProxy(ABC):
                 
                 if not data:
                     break
-                
+                    
+                # Throttle data delivery based on QoS policies
+                if self.qos_manager:
+                    await self.qos_manager.throttle(connection.client_ip, len(data))
+                    
                 # Update statistics
                 if direction == 'client->server':
                     connection.bytes_sent += len(data)

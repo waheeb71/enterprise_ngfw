@@ -135,7 +135,25 @@ class FlowTracker:
         # Cleanup task
         self.cleanup_task = None
         
+        # AI Analytics (Layer 6)
+        self.uba = None
+        self.vulnerability_predictor = None
+        
+        # High Availability State Sync
+        self.state_sync = None
+        
         logger.info(f"Flow Tracker initialized (max_flows={self.max_flows})")
+        
+    def set_sync_manager(self, state_sync):
+        """Inject HA State Synchronizer"""
+        self.state_sync = state_sync
+        logger.info("🔄 HA State Sync linked to Flow Tracker")
+        
+    def set_analytics(self, uba, vulnerability_predictor):
+        """Inject AI analytics engines after initialization"""
+        self.uba = uba
+        self.vulnerability_predictor = vulnerability_predictor
+        logger.info("🧠 AI Analytics (UBA & Vulnerability) wired into Flow Tracker")
     
     async def start(self):
         """Start flow tracker"""
@@ -202,6 +220,27 @@ class FlowTracker:
         self.stats['total_flows'] += 1
         self.stats['active_flows'] += 1
         
+        # 🧠 Predict vulnerabilities automatically when a new connection hits a target
+        if self.vulnerability_predictor and server_ip and server_port:
+            self.vulnerability_predictor.update_asset_profile(server_ip, open_ports=[server_port])
+            # Pass a basic intensity score based on active connections
+            score = self.vulnerability_predictor.predict_vulnerability(server_ip, scan_intensity=0.1)
+            if score.risk_score > 70.0:
+                logger.warning(f"🚨 Vulnerability Risk High for {server_ip}: {score.risk_score}%")
+                
+        # 🔄 HA Sync: Broadcast the new flow to the backup node (fire and forget)
+        if self.state_sync and self.state_sync.is_master:
+            asyncio.create_task(self.state_sync.broadcast_flow_state({
+                'flow_id': flow.flow_id,
+                'client_ip': flow.client_ip,
+                'client_port': flow.client_port,
+                'server_ip': flow.server_ip,
+                'server_port': flow.server_port,
+                'protocol': flow.protocol,
+                'application': flow.application,
+                'start_time': flow.start_time.isoformat(),
+            }))
+                
         logger.debug(f"Created flow: {flow_id}")
         
         return flow
@@ -210,6 +249,43 @@ class FlowTracker:
         """Get flow by ID"""
         return self.flows.get(flow_id)
     
+    def update_flow_policy(self, flow_id: str, action: str):
+        """Update policy action applied to flow"""
+        flow = self.flows.get(flow_id)
+        if flow:
+            flow.policy_action = action
+            from datetime import datetime
+            flow.last_seen = datetime.utcnow()
+            
+    def handle_synced_flow(self, flow_data: dict):
+        """Handle a flow synchronized from the HA Master node"""
+        if flow_data['flow_id'] in self.flows:
+            return  # Already tracked
+            
+        from datetime import datetime
+        flow = FlowInfo( # Corrected: Should be FlowInfo, not ConnectionState
+            flow_id=flow_data['flow_id'],
+            client_ip=flow_data['client_ip'],
+            client_port=flow_data['client_port'],
+            server_ip=flow_data['server_ip'],
+            server_port=flow_data['server_port'],
+            protocol=flow_data['protocol'],
+            application=flow_data.get('application'),
+            state=ConnectionState.ESTABLISHED # Assuming synced flows are established
+        )
+        # Parse the timestamp safely
+        try:
+            flow.start_time = datetime.fromisoformat(flow_data['start_time'])
+            flow.last_seen = flow.start_time
+        except Exception:
+            flow.start_time = datetime.utcnow()
+            flow.last_seen = datetime.utcnow()
+            
+        self.flows[flow.flow_id] = flow
+        self.stats['total_flows'] += 1
+        self.stats['active_flows'] += 1
+        logger.debug(f"🔄 Imported synced HA flow: {flow.flow_id}")
+            
     def update_flow_state(self, flow_id: str, state: ConnectionState):
         """Update flow state"""
         flow = self.flows.get(flow_id)
@@ -227,6 +303,17 @@ class FlowTracker:
         flow = self.flows.get(flow_id)
         if flow:
             flow.update_traffic(sent, received)
+            
+            # 🧠 Feed traffic data into User Behavior Analytics
+            if self.uba and flow.username:
+                anomaly_score = self.uba.analyze_activity(
+                    username=flow.username,
+                    source_ip=flow.client_ip,
+                    target_service=str(flow.server_port),
+                    bytes_transferred=sent + received
+                )
+                if anomaly_score > 0.8:
+                    logger.warning(f"🕵️ Anomalous behavior detected for user {flow.username} (Score: {anomaly_score})")
     
     def update_flow_application(self, flow_id: str, app: str, category: str = None):
         """Update flow application identification"""

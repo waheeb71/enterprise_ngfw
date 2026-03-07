@@ -1,0 +1,92 @@
+"""
+Enterprise NGFW - Data Loss Prevention (DLP) Plugin
+
+Scans payloads for sensitive information like Credit Cards, SSNs, and 
+confidential keywords to prevent data exfiltration.
+"""
+
+import re
+import logging
+from dataclasses import dataclass
+from typing import List, Dict, Tuple
+from ..framework.plugin_base import InspectorPlugin, InspectionContext, InspectionFinding
+
+@dataclass
+class DLPRule:
+    id: str
+    name: str
+    pattern: re.Pattern
+    severity: int
+    description: str
+
+class DLPInspectorPlugin(InspectorPlugin):
+    """Inspects traffic for sensitive data leaks."""
+    
+    def __init__(self, block_on_match: bool = True):
+        self.block_on_match = block_on_match
+        self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # Define basic DLP rules
+        self.rules: List[DLPRule] = [
+            # Visa, MasterCard, Amex patterns
+            DLPRule(
+                id="DLP_CREDIT_CARD",
+                name="Credit Card Number",
+                pattern=re.compile(rb'\b(?:\d[ -]*?){13,16}\b'),
+                severity=9,
+                description="Potential credit card number detected in payload"
+            ),
+            # US Social Security Number (basic format)
+            DLPRule(
+                id="DLP_SSN",
+                name="Social Security Number",
+                pattern=re.compile(rb'\b\d{3}-\d{2}-\d{4}\b'),
+                severity=8,
+                description="Potential US SSN detected in payload"
+            ),
+            DLPRule(
+                id="DLP_CONFIDENTIAL",
+                name="Confidential Keyword",
+                pattern=re.compile(rb'(?i)\b(?:confidential|strictly private|internal use only|do not distribute)\b'),
+                severity=5,
+                description="Confidential keywords detected in payload"
+            )
+        ]
+        
+    @property
+    def name(self) -> str:
+        return "dlp_inspector"
+        
+    @property
+    def priority(self) -> int:
+        return 60  # Mid priority
+        
+    async def initialize(self) -> None:
+        pass
+        
+    async def shutdown(self) -> None:
+        pass
+        
+    async def inspect(self, context: InspectionContext, data: bytes) -> List[InspectionFinding]:
+        findings = []
+        
+        # Only inspect outbound traffic if specified, or all traffic
+        if context.direction == "inbound" and not context.metadata.get("inspect_inbound_dlp", False):
+            return []
+            
+        for rule in self.rules:
+            matches = rule.pattern.findall(data)
+            if matches:
+                findings.append(
+                    InspectionFinding(
+                        plugin_name=self.name,
+                        severity=rule.severity,
+                        category="DLP",
+                        description=f"{rule.description} (Matched {len(matches)} times)",
+                        confidence=0.8,
+                        recommends_block=self.block_on_match,
+                        metadata={"rule_id": rule.id, "match_count": len(matches)}
+                    )
+                )
+                
+        return findings

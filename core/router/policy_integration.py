@@ -4,9 +4,11 @@ Handles interaction with the global Policy Engine.
 """
 
 import logging
+import asyncio
 from typing import Optional
 from policy.manager import PolicyManager
 from policy.schema import PolicyContext, Action
+from response.orchestrator import ThreatContext, MitigationAction
 from .types import RoutingDecision
 
 logger = logging.getLogger(__name__)
@@ -16,6 +18,8 @@ class PolicyIntegrator:
     
     def __init__(self, config: dict):
         self.policy_manager = PolicyManager(config)
+        self.orchestrator = None
+
         
     def enforce_policy(self, 
                       decision: RoutingDecision, 
@@ -42,6 +46,22 @@ class PolicyIntegrator:
         
         if action == Action.BLOCK:
             logger.warning(f"POLICY BLOCK: {client_ip} -> {decision.target_host}")
+            
+            # Trigger Autonomous Response if Orchestrator is hooked up
+            if self.orchestrator:
+                threat_context = ThreatContext(
+                    target=client_ip,
+                    action=MitigationAction.BLOCK_IP,
+                    confidence=0.9,
+                    reason=f"Blocked by Policy Engine: tried to access {decision.target_host}",
+                    metadata={
+                        "src_port": client_port,
+                        "dst_ip": decision.target_host,
+                        "dst_port": decision.target_port
+                    }
+                )
+                asyncio.create_task(self.orchestrator.execute_mitigation(threat_context))
+                
             decision.target_host = "0.0.0.0"
             decision.target_port = 0
             decision.metadata['blocked'] = True

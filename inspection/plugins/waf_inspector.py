@@ -1,0 +1,110 @@
+"""
+Enterprise NGFW - Web Application Firewall (WAF) Plugin
+
+Inspects HTTP/HTTPS payloads for web-based attacks like SQLi, XSS,
+and Command Injection based on OWASP Top 10.
+"""
+
+import re
+import urllib.parse
+import logging
+from dataclasses import dataclass
+from typing import List
+from ..framework.plugin_base import InspectorPlugin, InspectionContext, InspectionFinding
+
+@dataclass
+class WAFRule:
+    id: str
+    name: str
+    pattern: re.Pattern
+    severity: int
+    category: str
+
+class WAFInspectorPlugin(InspectorPlugin):
+    """Inspects HTTP traffic for web vulnerabilities."""
+    
+    def __init__(self, block_on_match: bool = True):
+        self.block_on_match = block_on_match
+        self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # Define basic WAF rules (Simplified for demo, in prod use ModSecurity rules)
+        self.rules: List[WAFRule] = [
+            # SQL Injection (Very basic)
+            WAFRule(
+                id="WAF_SQLI_1",
+                name="Basic SQL Injection",
+                pattern=re.compile(rb'(?i)(UNION\s+SELECT|SELECT\s+.*\s+FROM|INSERT\s+INTO|UPDATE\s+.*\s+SET|DROP\s+TABLE)'),
+                severity=9,
+                category="SQL Injection"
+            ),
+            # Cross-Site Scripting (XSS)
+            WAFRule(
+                id="WAF_XSS_1",
+                name="Basic XSS",
+                pattern=re.compile(rb'(?i)(<script.*?>.*?</script>|javascript:|onerror=|onload=)'),
+                severity=8,
+                category="Cross-Site Scripting"
+            ),
+            # Local File Inclusion (LFI)
+            WAFRule(
+                id="WAF_LFI_1",
+                name="Directory Traversal / LFI",
+                pattern=re.compile(rb'(?i)(\.\./\.\./|etc/passwd|windows/system32/cmd\.exe)'),
+                severity=9,
+                category="Local File Inclusion"
+            ),
+            # Command Injection
+            WAFRule(
+                id="WAF_CMD_1",
+                name="Command Injection",
+                pattern=re.compile(rb'(?i)(;\s*ls\s+-|;\s*cat\s+|;\s*wget\s+|;\s*curl\s+|\|\s*sh\s*)'),
+                severity=10,
+                category="Command Injection"
+            )
+        ]
+        
+    @property
+    def name(self) -> str:
+        return "waf_inspector"
+        
+    @property
+    def priority(self) -> int:
+        return 50  # High priority, inspect before others but after core
+        
+    async def initialize(self) -> None:
+        pass
+        
+    async def shutdown(self) -> None:
+        pass
+        
+    async def inspect(self, context: InspectionContext, data: bytes) -> List[InspectionFinding]:
+        findings = []
+        
+        # WAF primarily targets inbound HTTP/HTTPS traffic to protected servers
+        if context.direction == "outbound" and not context.metadata.get("inspect_outbound_waf", False):
+            return []
+            
+        # Decode URL encoding to prevent evasion
+        try:
+            # We must convert to string to use urllib.parse.unquote properly,
+            # but we catch errors if it's binary data
+            decoded_data = urllib.parse.unquote_to_bytes(data)
+        except Exception:
+            decoded_data = data
+            
+        for rule in self.rules:
+            # Check original data
+            if rule.pattern.search(data) or rule.pattern.search(decoded_data):
+                findings.append(
+                    InspectionFinding(
+                        plugin_name=self.name,
+                        severity=rule.severity,
+                        category=rule.category,
+                        description=f"WAF Rule Triggered: {rule.name}",
+                        confidence=0.9,
+                        recommends_block=self.block_on_match,
+                        metadata={"rule_id": rule.id}
+                    )
+                )
+                
+        return findings

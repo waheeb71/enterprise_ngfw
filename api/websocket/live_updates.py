@@ -15,11 +15,17 @@ from fastapi import WebSocket, WebSocketDisconnect, Depends
 from fastapi.websockets import WebSocketState
 import jwt
 
-logger = logging.getLogger(__name__)
+# Import JWT config from REST API (single source of truth)
+try:
+    from api.rest.main import SECRET_KEY, ALGORITHM
+except ImportError:
+    # Fallback for standalone usage
+    import os
+    import secrets as _secrets
+    SECRET_KEY = os.getenv("NGFW_SECRET_KEY", _secrets.token_hex(32))
+    ALGORITHM = "HS256"
 
-# JWT Configuration (same as REST API)
-SECRET_KEY = "your-secret-key-change-in-production"
-ALGORITHM = "HS256"
+logger = logging.getLogger(__name__)
 
 
 @dataclass

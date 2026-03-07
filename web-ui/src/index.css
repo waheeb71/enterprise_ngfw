@@ -1,0 +1,201 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Tajawal:wght@400;500;700&display=swap');
+
+:root {
+  /* Core Theme Colors - Deep Dark Blue & Fluorescent Green */
+  --bg-dark: #070B19;
+  --bg-panel: rgba(14, 21, 40, 0.6);
+  --bg-panel-hover: rgba(22, 32, 59, 0.8);
+
+  --primary-neon: #00FF66;
+  /* Fluorescent Green */
+  --primary-hover: #33FF85;
+  --primary-glow: rgba(0, 255, 102, 0.3);
+
+  --secondary: #1E3A8A;
+  /* Deep Blue Accent */
+  --secondary-glow: rgba(30, 58, 138, 0.4);
+
+  --accent-purple: #9D4EDD;
+  /* AI Layer Accent */
+  --accent-glow: rgba(157, 78, 221, 0.4);
+
+  --danger: #FF2A55;
+  /* Alerts/Blocks */
+  --danger-glow: rgba(255, 42, 85, 0.4);
+
+  --warning: #FFB020;
+  --info: #00E5FF;
+
+  --text-main: #FFFFFF;
+  --text-muted: #8B9BB4;
+
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-border-highlight: rgba(0, 255, 102, 0.3);
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+
+  --transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Outfit', 'Tajawal', sans-serif;
+  /* LTR & RTL support */
+  background-color: var(--bg-dark);
+  color: var(--text-main);
+  background-image:
+    radial-gradient(circle at 15% 50%, var(--secondary-glow), transparent 25%),
+    radial-gradient(circle at 85% 30%, rgba(0, 255, 102, 0.05), transparent 25%);
+  background-attachment: fixed;
+  min-height: 100vh;
+  overflow-x: hidden;
+  direction: ltr;
+  /* Default, overridden by React */
+}
+
+/* Glassmorphism Utilities */
+.glass-panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  transition: var(--transition);
+}
+
+.glass-panel:hover {
+  border-color: var(--glass-border-highlight);
+  box-shadow: 0 8px 32px var(--primary-glow);
+}
+
+/* Typography styles */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+p {
+  line-height: 1.6;
+}
+
+.text-gradient {
+  background: linear-gradient(90deg, var(--primary-neon), #00E5FF);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Status Indicators */
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  position: relative;
+}
+
+.status-dot.active {
+  background: var(--primary-neon);
+  box-shadow: 0 0 10px var(--primary-neon);
+}
+
+.status-dot.active::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  border-radius: 50%;
+  border: 1px solid var(--primary-neon);
+  animation: pulse 2s infinite cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.status-dot.error {
+  background: var(--danger);
+  box-shadow: 0 0 10px var(--danger);
+}
+
+.status-dot.warning {
+  background: var(--warning);
+  box-shadow: 0 0 10px var(--warning);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--text-muted);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary-neon);
+}
+
+/* Keyframes */
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+
+  100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(30px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    transform: translateX(-30px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}

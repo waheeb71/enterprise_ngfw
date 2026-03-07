@@ -23,6 +23,8 @@ from dataclasses import dataclass
 from datetime import datetime
 import re
 from core.ssl_engine.ca_pool import CAPoolManager
+# Inspection
+from inspection.framework.pipeline import InspectionPipeline, InspectionContext, InspectionAction
 logger = logging.getLogger(__name__)
 @dataclass
 class ConnectionStats:
@@ -164,10 +166,11 @@ class MITMProxy:
     and relays traffic between client and upstream server.
     """
     
-    def __init__(self, config: dict, ca_manager:CAPoolManager, ebpf_manager=None):
+    def __init__(self, config: dict, ca_manager:CAPoolManager, ebpf_manager=None, inspection_pipeline: Optional[InspectionPipeline] = None):
         self.config = config
         self.ca_manager = ca_manager
         self.ebpf_manager = ebpf_manager
+        self.inspection_pipeline = inspection_pipeline
         
         self.proxy_config = config.get('proxy', {})
         self.security_config = config.get('security', {})
@@ -755,9 +758,37 @@ class MITMProxy:
                 else:
                     stats.bytes_received += len(data)
                 
-                # Here we can add content inspection in the future
-                # data = await self._inspect_content(data, direction)
-                
+                # Inspect content
+                if self.inspection_pipeline:
+                    try:
+                        # Create context
+                        context = InspectionContext(
+                            src_ip=stats.client_ip,
+                            dst_ip=stats.target_host,
+                            src_port=stats.client_port,
+                            dst_port=stats.target_port,
+                            protocol='TCP',
+                            direction='outbound' if direction == 'client->server' else 'inbound',
+                            flow_id=f"{stats.client_ip}:{stats.client_port}-{stats.target_host}:{stats.target_port}",
+                            timestamp=datetime.now().timestamp(),
+                            metadata={}
+                        )
+                        
+                        result = self.inspection_pipeline.inspect(context, data)
+                        
+                        if result.is_blocked:
+                            logger.warning(f"🚫 Blocked by inspection: {direction} (Action: {result.action.name})")
+                            for finding in result.findings:
+                                logger.info(f"  - {finding.description}")
+                            
+                            # Terminate connection
+                            raise ConnectionAbortedError("Blocked by inspection")
+                            
+                    except ConnectionAbortedError:
+                        raise
+                    except Exception as e:
+                        logger.error(f"Inspection error: {e}")
+                        
                 writer.write(data)
                 await writer.drain()
                 

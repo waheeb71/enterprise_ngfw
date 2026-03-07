@@ -6,7 +6,7 @@ Coordinats Signature-based and Anomaly-based detection.
 import logging
 from typing import List, Optional
 from ..schema import IPSRule, PolicyContext, Action
-from .threat_intel import ThreatIntelligence, ThreatLevel
+from ..smart_blocker.threat_intelligence import ThreatIntelligence, ThreatLevel
 from .reputation import ReputationEngine, ReputationLevel
 
 # Placeholder for AI Anomaly Detector
@@ -38,10 +38,25 @@ class IPSEngine:
 
     def evaluate(self, context: PolicyContext) -> Action:
         # 1. Threat Intelligence Check
+        
+        # Check Source IP
         is_threat, threat_info = self.threat_intel.is_threat(context.src_ip, 'ip')
         if is_threat and threat_info.threat_level >= ThreatLevel.HIGH:
-            self.logger.warning(f"IPS Blocked Threat: {context.src_ip} ({threat_info.source})")
+            self.logger.warning(f"IPS Blocked Source IP Threat: {context.src_ip} ({threat_info.source})")
             return Action.BLOCK
+            
+        # Check Dest IP
+        is_threat, threat_info = self.threat_intel.is_threat(context.dst_ip, 'ip')
+        if is_threat and threat_info.threat_level >= ThreatLevel.HIGH:
+            self.logger.warning(f"IPS Blocked Dest IP Threat: {context.dst_ip} ({threat_info.source})")
+            return Action.BLOCK
+            
+        # Check Domain
+        if context.domain:
+            is_threat, threat_info = self.threat_intel.is_threat(context.domain, 'domain')
+            if is_threat and threat_info.threat_level >= ThreatLevel.HIGH:
+                self.logger.warning(f"IPS Blocked Malicious Domain: {context.domain} ({threat_info.source})")
+                return Action.BLOCK
             
         # 2. Reputation Check
         rep = self.reputation.get_ip_reputation(context.src_ip)

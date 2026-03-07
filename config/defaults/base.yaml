@@ -1,214 +1,147 @@
-# ═══════════════════════════════════════════════════════════════════
-# Enterprise NGFW - Base Configuration
-# ═══════════════════════════════════════════════════════════════════
-
-# Proxy Configuration
 proxy:
-  # Proxy mode: forward, transparent, reverse, or all
-  mode: "transparent"
-  
-  # Performance settings (shared across all modes)
+  mode: transparent
   max_connections: 10000
   buffer_size: 65536
   connection_timeout: 300
-  
-# SSL/TLS Configuration
 tls:
-  # CA certificates
-  ca_cert_path: "/etc/ngfw/certs/root-ca.crt"
-  ca_key_path: "/etc/ngfw/certs/root-ca.key"
-  
-  # Intermediate CA
+  ca_cert_path: /etc/ngfw/certs/root-ca.crt
+  ca_key_path: /etc/ngfw/certs/root-ca.key
   use_intermediate_ca: true
-  intermediate_ca_cert: "/etc/ngfw/certs/intermediate-ca.crt"
-  intermediate_ca_key: "/etc/ngfw/certs/intermediate-ca.key"
-  
-  # Server certificate (for reverse proxy)
-  server_cert: "/etc/ngfw/certs/server.crt"
-  server_key: "/etc/ngfw/certs/server.key"
-  cert_chain: "/etc/ngfw/certs/chain.pem"
-  
-  # Certificate generation settings
-  cert_cache_dir: "/var/cache/ngfw/certs"
+  intermediate_ca_cert: /etc/ngfw/certs/intermediate-ca.crt
+  intermediate_ca_key: /etc/ngfw/certs/intermediate-ca.key
+  server_cert: /etc/ngfw/certs/server.crt
+  server_key: /etc/ngfw/certs/server.key
+  cert_chain: /etc/ngfw/certs/chain.pem
+  cert_cache_dir: /var/cache/ngfw/certs
   cert_cache_size: 10000
   cert_validity_days: 365
   cert_key_size: 2048
-  
-  # TLS protocol versions
-  min_tls_version: "TLSv1.2"
-  max_tls_version: "TLSv1.3"
-  
-  # Cipher suites (empty = use defaults)
+  min_tls_version: TLSv1.2
+  max_tls_version: TLSv1.3
   cipher_suites: []
-  
-  # ALPN protocols
   alpn_protocols:
-    - "h2"
-    - "http/1.1"
-
-# SSL Inspection Policy
+  - h2
+  - http/1.1
 ssl_inspection:
-  # Global enable/disable
   enabled: true
-  
-  # Bypass domains (no inspection)
   bypass_domains:
-    - "*.bank.com"
-    - "*.paypal.com"
-    - "*.banking.app"
-  
-  # Bypass IPs
+  - '*.bank.com'
+  - '*.paypal.com'
+  - '*.banking.app'
   bypass_ips: []
-  
-  # Bypass categories
   bypass_categories:
-    - "banking"
-    - "healthcare"
-  
-  # Certificate pinning detection
+  - banking
+  - healthcare
   detect_pinning: true
-  pinning_action: "bypass"  # bypass, block, or monitor
-
-# Routing Configuration
+  pinning_action: bypass
 routing:
-  # Default proxy mode for connections
-  default_mode: "transparent"
-  
-  # Port to mode mapping
+  default_mode: transparent
   port_mappings:
-    8080: "forward"
-    8443: "forward"
-    443: "transparent"
-    80: "transparent"
-
-# Flow Tracking
+    8080: forward
+    8443: forward
+    443: transparent
+    80: transparent
 flow_tracking:
   enabled: true
   max_flows: 100000
-  flow_timeout: 3600  # seconds
-
-# eBPF XDP Configuration
+  flow_timeout: 3600
 ebpf:
   enabled: true
-  interface: "eth0"
-  xdp_mode: "native"  # native, generic, or offload
-  feedback_interval: 5  # seconds
-  
-  # Port filtering
+  interface: eth0
+  xdp_mode: native
+  feedback_interval: 5
+  ml_integration:
+    enabled: true
+    action: block
+    confidence_threshold: 0.85
   port_filter:
     enabled: true
-    default_action: "block"  # allow, block, or inspect
-    
-    # Allowed ports (TCP/UDP)
+    default_action: block
     allowed_ports:
-      - 80    # HTTP
-      - 443   # HTTPS
-      - 8080  # HTTP Alt
-      - 8443  # HTTPS Alt
-      - 53    # DNS
-      - 22    # SSH (admin)
-
-# Security Policies
+    - 80
+    - 443
+    - 8080
+    - 8443
+    - 53
+    - 22
 security:
-  # IP blacklist
   blacklist_ips: []
-  
-  # IP whitelist (bypass all checks)
   whitelist_ips: []
-  
-  # Domain blacklist
   blacklist_domains:
-    - "*.malware.com"
-    - "*.phishing.net"
-  
-  # Rate limiting
+  - '*.malware.com'
+  - '*.phishing.net'
   rate_limiting:
     enabled: true
     requests_per_second: 1000
     burst_size: 5000
-  
-  # Strict certificate validation
   strict_cert_validation: true
-
-# Logging Configuration
 logging:
-  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
-  file: "/var/log/ngfw/ngfw.log"
-  max_bytes: 104857600  # 100 MB
+  level: INFO
+  file: /var/log/ngfw/ngfw.log
+  max_bytes: 104857600
   backup_count: 10
-  
-  # Flow logging
   flow_log_enabled: true
-  flow_log_file: "/var/log/ngfw/flows.log"
-  
-  # Security logging
+  flow_log_file: /var/log/ngfw/flows.log
   security_log_enabled: true
-  security_log_file: "/var/log/ngfw/security.log"
-
-# Monitoring Configuration
+  security_log_file: /var/log/ngfw/security.log
 monitoring:
-  # Prometheus metrics
   prometheus:
     enabled: true
     port: 9090
-    path: "/metrics"
-  
-  # Health check endpoint
+    path: /metrics
   health_check:
     enabled: true
     port: 9091
-    path: "/health"
-
-# API Configuration
+    path: /health
 api:
-  enabled: false
-  listen_host: "127.0.0.1"
+  enabled: true
+  listen_host: 127.0.0.1
   listen_port: 8888
-  
-  # Authentication
   auth:
     enabled: true
-    api_key: "change-me-in-production"
-  
-  # WebSocket
+    api_key: change-me-in-production
   websocket:
-    enabled: false
+    enabled: true
     port: 8889
-
-# Integration Configuration
 integration:
-  # LDAP/Active Directory
   ldap:
     enabled: false
-    server: "ldap://ldap.example.com"
-    base_dn: "dc=example,dc=com"
-    bind_dn: "cn=admin,dc=example,dc=com"
-    bind_password: ""
-  
-  # SIEM Integration
+    server: ldap://ldap.example.com
+    base_dn: dc=example,dc=com
+    bind_dn: cn=admin,dc=example,dc=com
+    bind_password: ''
   siem:
     enabled: false
-    type: "syslog"  # syslog, elk, splunk
-    server: "siem.example.com"
+    type: syslog
+    server: siem.example.com
     port: 514
-  
-  # IDS/IPS Integration
   ids_ips:
     enabled: false
-    type: "suricata"  # suricata, snort, zeek
-    socket_path: "/var/run/suricata/suricata.socket"
-
-# Machine Learning
+    type: suricata
+    socket_path: /var/run/suricata/suricata.socket
 ml:
-  enabled: false
-  
-  # Anomaly detection
+  enabled: true
+  deep_model_path: "m:/��� �������/enterprise_ngfw/models/deep_classifier.onnx"
   anomaly_detection:
-    enabled: false
-    model_path: "/etc/ngfw/ml/anomaly_detector.onnx"
+    enabled: true
+    model_path: "m:/��� �������/enterprise_ngfw/models/anomaly_detector.onnx"
     threshold: 0.85
-  
-  # Traffic profiling
   traffic_profiling:
-    enabled: false
-    learning_period: 86400  # seconds (24 hours)
+    enabled: true
+    learning_period: 86400
+event_sink:
+  buffer_size: 1000
+  flush_interval: 1.0
+  batch_size: 100
+  max_retries: 3
+  retry_delay: 1.0
+  backends:
+  - type: file
+    output_dir: /var/log/ngfw/events
+    format: json
+    rotation: daily
+    max_size: 100
+    compress: false
+interfaces:
+  VMware Network Adapter VMnet1: LAN
+  vEthernet (Default Switch): LAN

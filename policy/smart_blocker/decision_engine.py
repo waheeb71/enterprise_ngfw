@@ -26,6 +26,7 @@ from .reputation_engine import ReputationEngine, ReputationLevel
 from .geoip_filter import GeoIPFilter
 from .category_blocker import CategoryBlocker, ContentCategory
 from .threat_intelligence import ThreatIntelligence, ThreatLevel
+from ..decision_ttl import DecisionTTLManager  # ✨ NEW
 
 
 class BlockingAction(IntEnum):
@@ -34,6 +35,9 @@ class BlockingAction(IntEnum):
     BLOCK = 1
     MONITOR = 2  # Allow but log
     CHALLENGE = 3  # Request captcha/verification
+    RATE_LIMIT= 4  # ✨ NEW: Apply rate limiting
+    QUARANTINE = 5  # ✨ NEW: Isolate suspicious traffic
+    LOG_ONLY = 6  # ✨ NEW: Only log, no action
 
 
 @dataclass
@@ -65,6 +69,12 @@ class PolicyMode(IntEnum):
     PARANOID = 3    # Maximum security
 
 
+class FailMode(IntEnum):
+    """Fail-safe modes for ML/Component failures"""
+    FAIL_OPEN = 0   # ✨ NEW: Allow traffic when components fail
+    FAIL_CLOSED = 1  # ✨ NEW: Block traffic when components fail
+
+
 class BlockingDecisionEngine:
     """
     Orchestrates all blocking components for unified decisions.
@@ -85,6 +95,7 @@ class BlockingDecisionEngine:
         category_blocker: Optional[CategoryBlocker] = None,
         threat_intel: Optional[ThreatIntelligence] = None,
         policy_mode: PolicyMode = PolicyMode.BALANCED,
+        fail_mode: FailMode = FailMode.FAIL_OPEN,  # ✨ NEW
         logger: Optional[logging.Logger] = None
     ):
         self.reputation_engine = reputation_engine or ReputationEngine()
@@ -93,7 +104,11 @@ class BlockingDecisionEngine:
         self.threat_intel = threat_intel or ThreatIntelligence()
         
         self.policy_mode = policy_mode
+        self.fail_mode = fail_mode  # ✨ NEW
         self.logger = logger or logging.getLogger(self.__class__.__name__)
+        
+        # ✨ NEW: TTL Manager for temporary decisions
+        self.ttl_manager = DecisionTTLManager(cleanup_interval=60)
         
         # Policy configuration
         self._reputation_threshold = 30  # Block if score < 30
@@ -104,13 +119,18 @@ class BlockingDecisionEngine:
         self._blocked_decisions = 0
         self._allowed_decisions = 0
         self._monitored_decisions = 0
+        self._rate_limited_decisions = 0  # ✨ NEW
+        self._quarantined_decisions = 0   # ✨ NEW
         
         self._block_reasons: Dict[str, int] = {}
         
         # Thread safety
         self._lock = threading.RLock()
         
-        self.logger.info(f"Initialized decision engine (mode: {policy_mode.name})")
+        self.logger.info(
+            f"Initialized decision engine (mode: {policy_mode.name}, "
+            f"fail_mode: {fail_mode.name})"
+        )
         
     def evaluate_connection(
         self,

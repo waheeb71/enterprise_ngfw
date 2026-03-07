@@ -13,8 +13,11 @@ class Action(Enum):
     ALLOW = "allow"
     BLOCK = "block"
     REJECT = "reject"  # Send RST/ICMP unreachable
-    MONITOR = "monitor" # Log but allow
-    CHALLENGE = "challenge" # CAPTCHA/Auth
+    MONITOR = "monitor"  # Log but allow
+    CHALLENGE = "challenge"  # CAPTCHA/Auth
+    RATE_LIMIT = "rate_limit"  # ✨ NEW: Apply rate limiting
+    QUARANTINE = "quarantine"  # ✨ NEW: Isolate suspicious traffic
+    LOG_ONLY = "log_only"  # ✨ NEW: Only log, no action
 
 class Protocol(Enum):
     TCP = "tcp"

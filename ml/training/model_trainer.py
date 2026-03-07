@@ -91,8 +91,7 @@ class ModelTrainer:
         config = config or TrainingConfig()
         self.feature_names = feature_names
         
-        logger.info(f"Training anomaly detector on {X.shape[0]} samples, {X.shape[1]} features")
-        
+        logger.info(f"Training anomaly detector on {X.shape[0]} samples, {X.shape[1]} features")        
         start_time = datetime.now()
         
         # Scale features
