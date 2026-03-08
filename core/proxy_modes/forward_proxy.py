@@ -29,10 +29,11 @@ class ForwardProxy(BaseProxy):
     
     Clients explicitly configure proxy settings to use this proxy.
     """
-    def __init__(self, config: dict, ca_manager, flow_tracker=None):
+    def __init__(self, config: dict, ca_manager, flow_tracker=None, event_sink=None):
         super().__init__(config)
         self.ca_manager = ca_manager
         self.flow_tracker = flow_tracker
+        self.event_sink = event_sink
         
         self.listen_host = self.proxy_config.get('forward_listen_host', '0.0.0.0')
         self.listen_port = self.proxy_config.get('forward_listen_port', 8080)

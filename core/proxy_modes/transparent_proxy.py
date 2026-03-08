@@ -166,10 +166,11 @@ class MITMProxy:
     and relays traffic between client and upstream server.
     """
     
-    def __init__(self, config: dict, ca_manager:CAPoolManager, ebpf_manager=None, inspection_pipeline: Optional[InspectionPipeline] = None):
+    def __init__(self, config: dict, ca_manager: CAPoolManager, ebpf_manager=None, event_sink=None, inspection_pipeline: Optional[InspectionPipeline] = None):
         self.config = config
         self.ca_manager = ca_manager
         self.ebpf_manager = ebpf_manager
+        self.event_sink = event_sink
         self.inspection_pipeline = inspection_pipeline
         
         self.proxy_config = config.get('proxy', {})
