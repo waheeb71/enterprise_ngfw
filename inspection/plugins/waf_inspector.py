@@ -25,8 +25,8 @@ class WAFInspectorPlugin(InspectorPlugin):
     """Inspects HTTP traffic for web vulnerabilities."""
     
     def __init__(self, block_on_match: bool = True):
+        super().__init__(name="waf_inspector", priority=50)
         self.block_on_match = block_on_match
-        self.logger = logging.getLogger(self.__class__.__name__)
         
         # Define basic WAF rules (Simplified for demo, in prod use ModSecurity rules)
         self.rules: List[WAFRule] = [
@@ -63,14 +63,7 @@ class WAFInspectorPlugin(InspectorPlugin):
                 category="Command Injection"
             )
         ]
-        
-    @property
-    def name(self) -> str:
-        return "waf_inspector"
-        
-    @property
-    def priority(self) -> int:
-        return 50  # High priority, inspect before others but after core
+
 
     def can_inspect(self, context: InspectionContext) -> bool:
         """WAF targets HTTP/HTTPS traffic (ports 80, 443, 8080, 8443)"""

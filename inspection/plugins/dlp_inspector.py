@@ -24,8 +24,8 @@ class DLPInspectorPlugin(InspectorPlugin):
     """Inspects traffic for sensitive data leaks."""
     
     def __init__(self, block_on_match: bool = True):
+        super().__init__(name="dlp_inspector", priority=60)
         self.block_on_match = block_on_match
-        self.logger = logging.getLogger(self.__class__.__name__)
         
         # Define basic DLP rules
         self.rules: List[DLPRule] = [
@@ -53,14 +53,7 @@ class DLPInspectorPlugin(InspectorPlugin):
                 description="Confidential keywords detected in payload"
             )
         ]
-        
-    @property
-    def name(self) -> str:
-        return "dlp_inspector"
-        
-    @property
-    def priority(self) -> int:
-        return 60  # Mid priority
+
         
     def can_inspect(self, context: InspectionContext) -> bool:
         """DLP runs on all traffic, skip inbound unless configured"""
