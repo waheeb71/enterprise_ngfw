@@ -6,6 +6,16 @@ Production-ready REST API with authentication, rate limiting, and comprehensive 
 
 import logging
 import os
+from typing import List, Dict, Optional, Any
+from datetime import datetime, timedelta
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, HTTPException, Depends, status, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 # Authentication & Models
@@ -32,20 +42,12 @@ logger = logging.getLogger(__name__)
 limiter = Limiter(key_func=get_remote_address)
 
 
-# Rate limiting
-limiter = Limiter(key_func=get_remote_address)
-
-
 # ==================== Pydantic Models ====================
 class ConfigUpdate(BaseModel):
     category: str = Field(..., description="Configuration category (e.g. system, network, ai)")
     key: str = Field(..., description="The exact YAML key to update")
     value: Any = Field(..., description="The new value for the key")
 
-class ConfigUpdate(BaseModel):
-    category: str = Field(..., description="Configuration category (e.g. system, network, ai)")
-    key: str = Field(..., description="The exact YAML key to update")
-    value: Any = Field(..., description="The new value for the key")
 
 
 
