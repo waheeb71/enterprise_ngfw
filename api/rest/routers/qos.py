@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel, Field
 import logging
-from api.rest.main import require_admin
+from api.rest.auth import require_admin, verify_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/qos", tags=["qos"])

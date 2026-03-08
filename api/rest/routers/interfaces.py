@@ -7,7 +7,7 @@ import os
 import yaml
 import logging
 
-from api.rest.main import require_admin, verify_token
+from api.rest.auth import require_admin, verify_token
 
 logger = logging.getLogger(__name__)
 

@@ -11,7 +11,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import pkcs12
 
-from api.rest.main import require_admin, verify_token
+from api.rest.auth import require_admin, verify_token
 
 router = APIRouter(prefix="/api/v1/certificates", tags=["certificates", "system"])
 

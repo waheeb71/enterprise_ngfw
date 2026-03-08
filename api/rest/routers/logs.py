@@ -2,7 +2,7 @@ import asyncio
 from fastapi import APIRouter, Depends, Query, Request
 from typing import List, Dict, Any
 
-from api.rest.main import require_admin
+from api.rest.auth import require_admin, verify_token
 # Import the actual global buffer instance directly from core.log_manager
 from core.log_manager import global_memory_handler
 

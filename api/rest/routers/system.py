@@ -3,7 +3,7 @@ from typing import Dict, Any
 from pydantic import BaseModel
 
 from core.system.hardware import get_network_interfaces, get_assigned_interfaces, assign_interface_role
-from api.rest.main import require_admin, verify_token
+from api.rest.auth import require_admin, verify_token
 import asyncio
 import os
 from fastapi import Request

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from typing import List, Dict
 from datetime import datetime, timedelta
-from api.rest.main import verify_token
+from api.rest.auth import require_admin, verify_token
 
 router = APIRouter(prefix="/api/v1", tags=["traffic"])
 

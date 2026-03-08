@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime, timedelta
 import logging
-from api.rest.main import require_admin, verify_token
+from api.rest.auth import require_admin, verify_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["firewall"])

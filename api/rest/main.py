@@ -6,21 +6,15 @@ Production-ready REST API with authentication, rate limiting, and comprehensive 
 
 import logging
 import os
-import secrets
-from typing import List, Dict, Optional, Any
-from datetime import datetime, timedelta
-from contextlib import asynccontextmanager
-
-import bcrypt
-from fastapi import FastAPI, HTTPException, Depends, status, Request
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
-import jwt
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+
+# Authentication & Models
+from .auth import (
+    SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES,
+    Token, LoginRequest, 
+    _hash_password, _verify_password, create_access_token, verify_token, require_admin
+)
+
 
 # Prometheus metrics
 from telemetry.prometheus_metrics import metrics_endpoint
@@ -34,18 +28,9 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
-# JWT Configuration
-_env_secret = os.getenv("NGFW_SECRET_KEY", "")
-if _env_secret:
-    SECRET_KEY = _env_secret
-else:
-    SECRET_KEY = secrets.token_hex(32)
-    logger.warning(
-        "⚠️ NGFW_SECRET_KEY not set! Using auto-generated key. "
-        "Set NGFW_SECRET_KEY environment variable for production."
-    )
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+# Rate limiting
+limiter = Limiter(key_func=get_remote_address)
+
 
 # Rate limiting
 limiter = Limiter(key_func=get_remote_address)
@@ -57,14 +42,11 @@ class ConfigUpdate(BaseModel):
     key: str = Field(..., description="The exact YAML key to update")
     value: Any = Field(..., description="The new value for the key")
 
-class Token(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
+class ConfigUpdate(BaseModel):
+    category: str = Field(..., description="Configuration category (e.g. system, network, ai)")
+    key: str = Field(..., description="The exact YAML key to update")
+    value: Any = Field(..., description="The new value for the key")
 
-
-class LoginRequest(BaseModel):
-    username: str
-    password: str
 
 
 class SystemStatus(BaseModel):
@@ -101,67 +83,9 @@ class QoSConfigRequest(BaseModel):
     default_user_burst_bytes: int = Field(..., description="Default burst limit per user in bytes")
 
 
-# ==================== Authentication ====================
-
-security = HTTPBearer()
-
-# ==================== Password Hashing ====================
-
-def _hash_password(password: str) -> str:
-    """Hash a password using bcrypt"""
-    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-
-
-def _verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password against its bcrypt hash"""
-    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
-
-
 # User database configuration handled by core.database.DatabaseManager
 # Default users are created on startup if they don't exist.
 
-
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
-    """Create JWT access token"""
-    to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=15))
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
-
-
-def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
-    """Verify JWT token"""
-    try:
-        token = credentials.credentials
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authentication credentials"
-            )
-        return payload
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has expired"
-        )
-    except jwt.JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials"
-        )
-
-
-def require_admin(token_data: dict = Depends(verify_token)):
-    """Require admin role"""
-    if token_data.get("role") != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin privileges required"
-        )
-    return token_data
 
 
 # ==================== FastAPI Application ====================

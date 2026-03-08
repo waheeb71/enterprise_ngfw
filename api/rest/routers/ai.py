@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from pydantic import BaseModel
 from datetime import datetime
 
-from api.rest.main import require_admin, verify_token
+from api.rest.auth import require_admin, verify_token
 
 router = APIRouter(prefix="/api/v1/ai", tags=["ai", "models"])
 
